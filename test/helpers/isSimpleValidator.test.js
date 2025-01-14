@@ -1,8 +1,10 @@
 'use strict';
 
 const assert = require('assert');
+
+require('../common'); // required for side-effect setup (so that the default driver is set-up)
 const isSimpleValidator = require('../../lib/helpers/isSimpleValidator');
-const MongooseDocumentArray = require('../../lib/types/DocumentArray');
+const MongooseDocumentArray = require('../../lib/types/documentArray');
 
 describe('isSimpleValidator', function() {
   it('empty object', function() {

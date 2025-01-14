@@ -1,4 +1,4 @@
-## Timestamps
+# Timestamps
 
 Mongoose schemas support a `timestamps` option.
 If you set `timestamps: true`, Mongoose will add two properties of type `Date` to your schema:
@@ -47,6 +47,7 @@ console.log(doc.updatedAt); // 2022-02-26T17:08:13.991Z
 
 // Mongoose also blocks changing `createdAt` and sets its own `updatedAt`
 // on `findOneAndUpdate()`, `updateMany()`, and other query operations
+// **except** `replaceOne()` and `findOneAndReplace()`.
 doc = await User.findOneAndUpdate(
   { _id: doc._id },
   { name: 'test3', createdAt: new Date(0), updatedAt: new Date(0) },
@@ -56,7 +57,36 @@ console.log(doc.createdAt); // 2022-02-26T17:08:13.930Z
 console.log(doc.updatedAt); // 2022-02-26T17:08:14.008Z
 ```
 
-### Alternate Property Names
+Keep in mind that `replaceOne()` and `findOneAndReplace()` overwrite all non-`_id` properties, **including** immutable properties like `createdAt`.
+Calling `replaceOne()` or `findOneAndReplace()` will update the `createdAt` timestamp as shown below.
+
+```javascript
+// `findOneAndReplace()` and `replaceOne()` without timestamps specified in `replacement`
+// sets `createdAt` and `updatedAt` to current time.
+doc = await User.findOneAndReplace(
+  { _id: doc._id },
+  { name: 'test3' },
+  { new: true }
+);
+console.log(doc.createdAt); // 2022-02-26T17:08:14.008Z
+console.log(doc.updatedAt); // 2022-02-26T17:08:14.008Z
+
+// `findOneAndReplace()` and `replaceOne()` with timestamps specified in `replacement`
+// sets `createdAt` and `updatedAt` to the values in `replacement`.
+doc = await User.findOneAndReplace(
+  { _id: doc._id },
+  {
+    name: 'test3',
+    createdAt: new Date('2022-06-01'),
+    updatedAt: new Date('2022-06-01')
+  },
+  { new: true }
+);
+console.log(doc.createdAt); // 2022-06-01T00:00:00.000Z
+console.log(doc.updatedAt); // 2022-06-01T00:00:00.000Z
+```
+
+## Alternate Property Names
 
 For the purposes of these docs, we'll always refer to `createdAt` and `updatedAt`.
 But you can overwrite these property names as shown below.
@@ -70,7 +100,7 @@ const userSchema = new Schema({ name: String }, {
 });
 ```
 
-### Disabling Timestamps
+## Disabling Timestamps
 
 `save()`, `updateOne()`, `updateMany()`, `findOneAndUpdate()`, `update()`, `replaceOne()`, and `bulkWrite()` all support a `timestamps` option.
 Set `timestamps: false` to skip setting timestamps for that particular operation.
@@ -111,7 +141,7 @@ You can also set the `timestamps` option to an object to configure `createdAt` a
 For example, in the below code, Mongoose sets `createdAt` on `save()` but skips `updatedAt`.
 
 ```javascript
-let doc = new User({ name: 'test' });
+const doc = new User({ name: 'test' });
 
 // Tell Mongoose to set `createdAt`, but skip `updatedAt`.
 await doc.save({ timestamps: { createdAt: true, updatedAt: false } });
@@ -144,7 +174,7 @@ doc = await User.findOneAndUpdate({ _id: doc._id }, { createdAt: new Date(0) }, 
 console.log(doc.createdAt); // 1970-01-01T00:00:00.000Z
 ```
 
-### Timestamps on Subdocuments
+## Timestamps on Subdocuments
 
 Mongoose also supports setting timestamps on subdocuments.
 Keep in mind that `createdAt` and `updatedAt` for subdocuments represent when the subdocument was created or updated, not the top level document.
@@ -154,7 +184,7 @@ Overwriting a subdocument will also overwrite `createdAt`.
 const roleSchema = new Schema({ value: String }, { timestamps: true });
 const userSchema = new Schema({ name: String, roles: [roleSchema] });
 
-let doc = await User.create({ name: 'test', roles: [{ value: 'admin' }] });
+const doc = await User.create({ name: 'test', roles: [{ value: 'admin' }] });
 console.log(doc.roles[0].createdAt); // 2022-02-27T00:22:53.836Z
 console.log(doc.roles[0].updatedAt); // 2022-02-27T00:22:53.836Z
 
@@ -171,7 +201,7 @@ console.log(doc.roles[0].createdAt); // 2022-02-27T00:22:53.902Z
 console.log(doc.roles[0].updatedAt); // 2022-02-27T00:22:53.909Z
 ```
 
-### Under the Hood
+## Under the Hood
 
 For queries with timestamps, Mongoose adds 2 properties to each update query:
 
@@ -184,7 +214,7 @@ For example, if you run the below code:
 mongoose.set('debug', true);
 
 const userSchema = new Schema({
-  name: String,
+  name: String
 }, { timestamps: true });
 const User = mongoose.model('User', userSchema);
 
@@ -198,11 +228,28 @@ Mongoose: users.findOneAndUpdate({}, { '$setOnInsert': { createdAt: new Date("Su
 ```
 
 Notice the `$setOnInsert` for `createdAt` and `$set` for `updatedAt`.
-MongoDB's [`$setOnInsert` operator](https://docs.mongodb.com/manual/reference/operator/update/setOnInsert/) applies the update only if a new document is [upserted](https://masteringjs.io/tutorials/mongoose/upsert).
-So, for example, if you want to _only_ set `updatedAt` if the document if a new document is created, you can disable the `updatedAt` timestamp and set it yourself as shown below:
+MongoDB's [`$setOnInsert` operator](https://www.mongodb.com/docs/manual/reference/operator/update/setOnInsert/) applies the update only if a new document is [upserted](https://masteringjs.io/tutorials/mongoose/upsert).
+So, for example, if you want to *only* set `updatedAt` if a new document is created, you can disable the `updatedAt` timestamp and set it yourself as shown below:
 
 ```javascript
 await User.findOneAndUpdate({}, { $setOnInsert: { updatedAt: new Date() } }, {
   timestamps: { createdAt: true, updatedAt: false }
 });
+```
+
+## Updating Timestamps
+
+If you need to disable Mongoose's timestamps and update a document's timestamps to a different value using `updateOne()` or `findOneAndUpdate()`, you need to do the following:
+
+1. Set the `timestamps` option to `false` to prevent Mongoose from setting `updatedAt`.
+2. Set `overwriteImmutable` to `true` to allow overwriting `createdAt`, which is an immutable property by default.
+
+```javascript
+const createdAt = new Date('2011-06-01');
+// Update a document's `createdAt` to a custom value.
+// Normally Mongoose would prevent doing this because `createdAt` is immutable.
+await Model.updateOne({ _id: doc._id }, { createdAt }, { overwriteImmutable: true, timestamps: false });
+
+doc = await Model.collection.findOne({ _id: doc._id });
+doc.createdAt.valueOf() === createdAt.valueOf(); // true
 ```

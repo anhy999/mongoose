@@ -1,4 +1,4 @@
-import mongoose, { Schema, model, Document, PopulatedDoc, Types, HydratedDocument, SchemaTypeOptions } from 'mongoose';
+import mongoose, { Schema, model, Document, PopulatedDoc, Types, HydratedDocument, SchemaTypeOptions, Model } from 'mongoose';
 // Use the mongodb ObjectId to make instanceof calls possible
 import { ObjectId } from 'mongodb';
 import { expectAssignable, expectError, expectType } from 'tsd';
@@ -11,7 +11,7 @@ const childSchema: Schema = new Schema({ name: String });
 const ChildModel = model<Child>('Child', childSchema);
 
 interface Parent {
-  child: PopulatedDoc<Document<ObjectId> & Child>,
+  child: PopulatedDoc<Child>,
   name?: string
 }
 
@@ -20,22 +20,26 @@ const ParentModel = model<Parent>('Parent', new Schema({
   name: String
 }));
 
-ParentModel.findOne({}).populate('child').orFail().then((doc: Document<ObjectId, {}, Parent> & Parent) => {
-  const child = doc.child;
-  if (child == null || child instanceof ObjectId) {
-    throw new Error('should be populated');
-  } else {
-    useChildDoc(child);
-  }
-  const lean = doc.toObject();
-  const leanChild = lean.child;
-  if (leanChild == null || leanChild instanceof ObjectId) {
-    throw new Error('should be populated');
-  } else {
-    const name = leanChild.name;
-    expectError(leanChild.save());
-  }
-});
+ParentModel.
+  findOne({}).
+  populate<{ child: Document<ObjectId> & Child }>('child').
+  orFail().
+  then((doc: Document<ObjectId, {}, Parent> & Parent) => {
+    const child = doc.child;
+    if (child == null || child instanceof ObjectId) {
+      throw new Error('should be populated');
+    } else {
+      useChildDoc(child);
+    }
+    const lean = doc.toObject<typeof doc>();
+    const leanChild = lean.child;
+    if (leanChild == null || leanChild instanceof ObjectId) {
+      throw new Error('should be populated');
+    } else {
+      const name = leanChild.name;
+      expectError(leanChild.save());
+    }
+  });
 
 function useChildDoc(child: Child): void {
   console.log(child.name.trim());
@@ -139,13 +143,13 @@ function gh11321(): void {
   });
 
   parentSchema.virtual('test', {
-    localField: (doc: HydratedDocument<Parent, {}>): string => {
+    localField: (doc: HydratedDocument<Parent>): string => {
       if (typeof doc.name === 'string') {
         return doc.name;
       }
       return 'foo';
     },
-    foreignField: (doc: HydratedDocument<Parent, {}>): string => {
+    foreignField: (doc: HydratedDocument<Parent>): string => {
       if (typeof doc.name === 'string') {
         return doc.name;
       }
@@ -244,7 +248,6 @@ async function _11532() {
 
   if (!leanResult) return;
   expectType<string>(leanResult.child.name);
-  expectError(leanResult?.__v);
 }
 
 async function gh11710() {
@@ -338,4 +341,214 @@ function gh12136() {
     child: PopulatedDoc<ChildDocument>;
   }
 
+}
+
+async function gh13070() {
+  interface IParent {
+    name: string;
+    child: Types.ObjectId;
+  }
+  interface IChild {
+    name: string;
+    parent: Types.ObjectId;
+  }
+
+  const parentSchema = new Schema(
+    {
+      name: { type: String, required: true },
+      child: { type: Schema.Types.ObjectId, ref: 'Child', required: true }
+    });
+
+  const childSchema = new Schema(
+    {
+      name: { type: String, required: true },
+      parent: { type: Schema.Types.ObjectId, ref: 'Parent', required: true }
+    });
+
+  const Parent = model<IParent>('Parent', parentSchema);
+  const Child = model<IChild>('Child', childSchema);
+
+  const doc = await Parent.findOne().orFail();
+  const doc2 = await Child.populate<{ child: IChild }>(doc, 'child');
+  const name: string = doc2.child.name;
+}
+
+function gh14441() {
+  interface Parent {
+    child?: Types.ObjectId;
+    name?: string;
+  }
+  const ParentModel = model<Parent>(
+    'Parent',
+    new Schema({
+      child: { type: Schema.Types.ObjectId, ref: 'Child' },
+      name: String
+    })
+  );
+
+  interface Child {
+    name: string;
+  }
+  const childSchema: Schema = new Schema({ name: String });
+  model<Child>('Child', childSchema);
+
+  ParentModel.findOne({})
+    .populate<{ child: Child }>('child')
+    .orFail()
+    .then(doc => {
+      expectType<string>(doc.child.name);
+      const docObject = doc.toObject();
+      expectType<string>(docObject.child.name);
+    });
+
+  ParentModel.findOne({})
+    .populate<{ child: Child }>('child')
+    .lean()
+    .orFail()
+    .then(doc => {
+      expectType<string>(doc.child.name);
+    });
+
+  ParentModel.find({})
+    .populate<{ child: Child }>('child')
+    .orFail()
+    .then(docs => {
+      expectType<string>(docs[0]!.child.name);
+      const docObject = docs[0]!.toObject();
+      expectType<string>(docObject.child.name);
+    });
+}
+
+async function gh14574() {
+  // Document definition
+  interface User {
+    firstName: string;
+    lastName: string;
+    friend?: Types.ObjectId;
+  }
+
+  interface UserMethods {
+    fullName(): string;
+  }
+
+  type UserModelType = mongoose.Model<User, {}, UserMethods>;
+
+  const userSchema = new Schema<User, UserModelType, UserMethods>(
+    {
+      firstName: String,
+      lastName: String,
+      friend: { type: Schema.Types.ObjectId, ref: 'User' }
+    },
+    {
+      methods: {
+        fullName() {
+          return `${this.firstName} ${this.lastName}`;
+        }
+      }
+    }
+  );
+  const userModel = model<User, UserModelType>('User', userSchema);
+
+  const UserModel = () => userModel;
+
+  const user = await UserModel()
+    .findOne({ firstName: 'b' })
+    .populate<{ friend: HydratedDocument<User, UserMethods> }>('friend')
+    .orFail()
+    .exec();
+  expectType<string>(user.fullName());
+  expectType<string>(user.friend.fullName());
+}
+
+async function gh15111() {
+  interface IChild {
+    _id: Types.ObjectId;
+    name: string;
+  }
+
+  type ChildDocumentOverrides = {};
+
+  interface IChildVirtuals {
+    id: string;
+  }
+
+  type ChildInstance = HydratedDocument<
+    IChild,
+    ChildDocumentOverrides & IChildVirtuals
+  >;
+
+  type ChildModelType = Model<
+    IChild,
+    {},
+    ChildDocumentOverrides,
+    IChildVirtuals,
+    ChildInstance
+  >;
+  const childSchema = new Schema<IChild, ChildModelType>(
+    {
+      name: {
+        type: 'String',
+        required: true,
+        trim: true
+      }
+    }
+  );
+  const ChildModel = mongoose.model<IChild, ChildModelType>('Child', childSchema);
+
+  interface IParent {
+    _id: Types.ObjectId;
+    name: string;
+    surname: string;
+    child: PopulatedDoc<Document<Types.ObjectId> & IChild>;
+  }
+
+  type ParentDocumentOverrides = {};
+
+  interface IParentVirtuals {
+    id: string;
+    fullName: string;
+  }
+
+  type ParentInstance = HydratedDocument<
+    IParent,
+    ParentDocumentOverrides & IParentVirtuals
+  >;
+
+  type ParentModelType = Model<
+    IParent,
+    {},
+    ParentDocumentOverrides,
+    IParentVirtuals,
+    ParentInstance
+  >;
+  const parentSchema = new Schema<IParent, ParentModelType>(
+    {
+      name: {
+        type: 'String',
+        required: true,
+        trim: true
+      },
+      surname: {
+        type: 'String',
+        required: true,
+        trim: true
+      },
+      child: {
+        type: 'ObjectId',
+        ref: 'Child',
+        required: true
+      }
+    }
+  );
+
+  parentSchema.virtual('fullName').get(function() {
+    return `${this.name} ${this.surname}`;
+  });
+
+  const ParentModel = mongoose.model<IParent, ParentModelType>('Parent', parentSchema);
+
+  const parents = await ParentModel.find().populate<{ child: ChildInstance }>(
+    'child'
+  );
+  expectType<string>(parents[0].fullName);
 }

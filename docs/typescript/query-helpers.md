@@ -9,7 +9,7 @@ The following is an example of how query helpers work in JavaScript.
 ProjectSchema.query.byName = function(name) {
   return this.find({ name: name });
 };
-var Project = mongoose.model('Project', ProjectSchema);
+const Project = mongoose.model('Project', ProjectSchema);
 
 // Works. Any Project query, whether it be `find()`, `findOne()`,
 // `findOneAndUpdate()`, `delete()`, etc. now has a `byName()` helper
@@ -29,7 +29,7 @@ The 2nd generic parameter, `TQueryHelpers`, should be an interface that contains
 Below is an example of creating a `ProjectModel` with a `byName` query helper.
 
 ```typescript
-import { HydratedDocument, Model, Query, Schema, model } from 'mongoose';
+import { HydratedDocument, Model, QueryWithHelpers, Schema, model, connect } from 'mongoose';
 
 interface Project {
   name?: string;
@@ -57,20 +57,20 @@ const ProjectSchema = new Schema<
 });
 
 ProjectSchema.query.byName = function byName(
-    this: QueryWithHelpers<any, HydratedDocument<Project>, ProjectQueryHelpers>,
-    name: string
+  this: QueryWithHelpers<any, HydratedDocument<Project>, ProjectQueryHelpers>,
+  name: string
 ) {
   return this.find({ name: name });
 };
 
 // 2nd param to `model()` is the Model class to return.
-const ProjectModel = model<Project, ProjectModelType>('Project', schema);
+const ProjectModel = model<Project, ProjectModelType>('Project', ProjectSchema);
 
 run().catch(err => console.log(err));
 
 async function run(): Promise<void> {
-  await connect('mongodb://localhost:27017/test');
-  
+  await connect('mongodb://127.0.0.1:27017/test');
+
   // Equivalent to `ProjectModel.find({ stars: { $gt: 1000 }, name: 'mongoose' })`
   await ProjectModel.find().where('stars').gt(1000).byName('mongoose');
 }

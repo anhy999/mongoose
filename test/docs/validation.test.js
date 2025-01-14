@@ -3,8 +3,6 @@ const assert = require('assert');
 const mongoose = require('../../');
 const start = require('../common');
 
-const Promise = global.Promise || require('bluebird');
-
 describe('validation docs', function() {
   let db;
   const Schema = mongoose.Schema;
@@ -15,6 +13,8 @@ describe('validation docs', function() {
       maxPoolSize: 1
     });
   });
+
+  beforeEach(() => db.deleteModel(/Vehicle/));
 
   after(async function() {
     await db.close();
@@ -27,9 +27,9 @@ describe('validation docs', function() {
    * - Validation is [middleware](./middleware.html). Mongoose registers validation as a `pre('save')` hook on every schema by default.
    * - You can disable automatic validation before save by setting the [validateBeforeSave](./guide.html#validateBeforeSave) option
    * - You can manually run validation using `doc.validate(callback)` or `doc.validateSync()`
-   * - You can manually mark a field as invalid (causing validation to fail) by using [`doc.invalidate(...)`](./api.html#document_Document-invalidate)
-   * - Validators are not run on undefined values. The only exception is the [`required` validator](./api.html#schematype_SchemaType-required).
-   * - Validation is asynchronously recursive; when you call [Model#save](./api.html#model_Model-save), sub-document validation is executed as well. If an error occurs, your [Model#save](./api.html#model_Model-save) callback receives it
+   * - You can manually mark a field as invalid (causing validation to fail) by using [`doc.invalidate(...)`](./api/document.html#document_Document-invalidate)
+   * - Validators are not run on undefined values. The only exception is the [`required` validator](./api/schematype.html#schematype_SchemaType-required).
+   * - Validation is asynchronously recursive; when you call [Model#save](./api/model.html#model_Model-save), sub-document validation is executed as well. If an error occurs, your [Model#save](./api/model.html#model_Model-save) callback receives it
    * - Validation is customizable
    */
 
@@ -51,7 +51,7 @@ describe('validation docs', function() {
     } catch (err) {
       error = err;
     }
-    
+
     assert.equal(error.errors['name'].message,
       'Path `name` is required.');
 
@@ -63,7 +63,7 @@ describe('validation docs', function() {
   /**
    * Mongoose has several built-in validators.
    *
-   * - All [SchemaTypes](/docs/schematypes.html) have the built-in [required](./api.html#schematype_SchemaType-required) validator. The required validator uses the [SchemaType's `checkRequired()` function](./api.html#schematype_SchemaType-checkRequired) to determine if the value satisfies the required validator.
+   * - All [SchemaTypes](/docs/schematypes.html) have the built-in [required](./api/schematype.html#schematype_SchemaType-required) validator. The required validator uses the [SchemaType's `checkRequired()` function](./api/schematype.html#schematype_SchemaType-checkRequired) to determine if the value satisfies the required validator.
    * - [Numbers](/docs/schematypes.html#numbers) have [`min` and `max`](./schematypes.html#number-validators) validators.
    * - [Strings](/docs/schematypes.html#strings) have [`enum`, `match`, `minLength`, and `maxLength`](./schematypes.html#string-validators) validators.
    *
@@ -157,7 +157,7 @@ describe('validation docs', function() {
 
   /**
    * A common gotcha for beginners is that the `unique` option for schemas
-   * is *not* a validator. It's a convenient helper for building [MongoDB unique indexes](https://docs.mongodb.com/manual/core/index-unique/).
+   * is *not* a validator. It's a convenient helper for building [MongoDB unique indexes](https://www.mongodb.com/docs/manual/core/index-unique/).
    * See the [FAQ](/docs/faq.html) for more information.
    */
 
@@ -176,14 +176,20 @@ describe('validation docs', function() {
     // acquit:ignore:end
 
     const dup = [{ username: 'Val' }, { username: 'Val' }];
-    U1.create(dup, err => {
-      // Race condition! This may save successfully, depending on whether
-      // MongoDB built the index before writing the 2 docs.
-      // acquit:ignore:start
-      err;
-      --remaining || done();
-      // acquit:ignore:end
-    });
+    // Race condition! This may save successfully, depending on whether
+    // MongoDB built the index before writing the 2 docs.
+    U1.create(dup).
+      then(() => {
+        // acquit:ignore:start
+        --remaining || done();
+        // acquit:ignore:end
+      }).
+      catch(err => {
+        // acquit:ignore:start
+        err;
+        --remaining || done();
+        // acquit:ignore:end
+      });
 
     // You need to wait for Mongoose to finish building the `unique`
     // index before writing. You only need to build indexes once for
@@ -193,7 +199,7 @@ describe('validation docs', function() {
     U2.init().
       then(() => U2.create(dup)).
       catch(error => {
-        // Will error, but will *not* be a mongoose validation error, it will be
+        // `U2.create()` will error, but will *not* be a mongoose validation error, it will be
         // a duplicate key error.
         // See: https://masteringjs.io/tutorials/mongoose/e11000-duplicate-key
         assert.ok(error);
@@ -211,7 +217,7 @@ describe('validation docs', function() {
    *
    * Custom validation is declared by passing a validation function.
    * You can find detailed instructions on how to do this in the
-   * [`SchemaType#validate()` API docs](./api.html#schematype_SchemaType-validate).
+   * [`SchemaType#validate()` API docs](./api/schematype.html#schematype_SchemaType-validate).
    */
   it('Custom Validators', function() {
     const userSchema = new Schema({
@@ -293,7 +299,7 @@ describe('validation docs', function() {
   /**
    * Errors returned after failed validation contain an `errors` object
    * whose values are `ValidatorError` objects. Each
-   * [ValidatorError](./api.html#error-validation-js) has `kind`, `path`,
+   * [ValidatorError](./api/error-validation-js.html#error-validation-js) has `kind`, `path`,
    * `value`, and `message` properties.
    * A ValidatorError also may have a `reason` property. If an error was
    * thrown in the validator, this property will contain the error that was
@@ -325,10 +331,10 @@ describe('validation docs', function() {
     let error;
     try {
       await toy.save();
-    } catch(err) {
+    } catch (err) {
       error = err;
     }
-    
+
     // `error` is a ValidationError object
     // `error.errors.color` is a ValidatorError object
     assert.equal(error.errors.color.message, 'Color `Green` not valid');
@@ -377,6 +383,53 @@ describe('validation docs', function() {
     assert.equal(err.errors['numWheels'].name, 'CastError');
     assert.equal(err.errors['numWheels'].message,
       'Cast to Number failed for value "not a number" (type string) at path "numWheels"');
+    // acquit:ignore:end
+  });
+
+  it('Cast Error Message Overwrite', function() {
+    const vehicleSchema = new mongoose.Schema({
+      numWheels: {
+        type: Number,
+        cast: '{VALUE} is not a number'
+      }
+    });
+    const Vehicle = db.model('Vehicle', vehicleSchema);
+
+    const doc = new Vehicle({ numWheels: 'pie' });
+    const err = doc.validateSync();
+
+    err.errors['numWheels'].name; // 'CastError'
+    // "pie" is not a number
+    err.errors['numWheels'].message;
+    // acquit:ignore:start
+    assert.equal(err.errors['numWheels'].name, 'CastError');
+    assert.equal(err.errors['numWheels'].message,
+      '"pie" is not a number');
+    db.deleteModel(/Vehicle/);
+    // acquit:ignore:end
+  });
+
+  /* eslint-disable no-unused-vars */
+  it('Cast Error Message Function Overwrite', function() {
+    const vehicleSchema = new mongoose.Schema({
+      numWheels: {
+        type: Number,
+        cast: [null, (value, path, model, kind) => `"${value}" is not a number`]
+      }
+    });
+    const Vehicle = db.model('Vehicle', vehicleSchema);
+
+    const doc = new Vehicle({ numWheels: 'pie' });
+    const err = doc.validateSync();
+
+    err.errors['numWheels'].name; // 'CastError'
+    // "pie" is not a number
+    err.errors['numWheels'].message;
+    // acquit:ignore:start
+    assert.equal(err.errors['numWheels'].name, 'CastError');
+    assert.equal(err.errors['numWheels'].message,
+      '"pie" is not a number');
+    db.deleteModel(/Vehicle/);
     // acquit:ignore:end
   });
 
@@ -447,10 +500,10 @@ describe('validation docs', function() {
 
   /**
    * In the above examples, you learned about document validation. Mongoose also
-   * supports validation for [`update()`](/docs/api.html#query_Query-update),
-   * [`updateOne()`](/docs/api.html#query_Query-updateOne),
-   * [`updateMany()`](/docs/api.html#query_Query-updateMany),
-   * and [`findOneAndUpdate()`](/docs/api.html#query_Query-findOneAndUpdate) operations.
+   * supports validation for [`update()`](/docs/api/query.html#query_Query-update),
+   * [`updateOne()`](/docs/api/query.html#query_Query-updateOne),
+   * [`updateMany()`](/docs/api/query.html#query_Query-updateMany),
+   * and [`findOneAndUpdate()`](/docs/api/query.html#query_Query-findOneAndUpdate) operations.
    * Update validators are off by default - you need to specify
    * the `runValidators` option.
    *
@@ -541,10 +594,7 @@ describe('validation docs', function() {
    * you try to explicitly `$unset` the key.
    */
 
-  it('Update Validators Only Run On Updated Paths', function(done) {
-    // acquit:ignore:start
-    let outstanding = 2;
-    // acquit:ignore:end
+  it('Update Validators Only Run On Updated Paths', async function() {
     const kittenSchema = new Schema({
       name: { type: String, required: true },
       age: Number
@@ -554,22 +604,14 @@ describe('validation docs', function() {
 
     const update = { color: 'blue' };
     const opts = { runValidators: true };
-    Kitten.updateOne({}, update, opts, function() {
-      // Operation succeeds despite the fact that 'name' is not specified
-      // acquit:ignore:start
-      --outstanding || done();
-      // acquit:ignore:end
-    });
+    // Operation succeeds despite the fact that 'name' is not specified
+    await Kitten.updateOne({}, update, opts);
 
     const unset = { $unset: { name: 1 } };
-    Kitten.updateOne({}, unset, opts, function(err) {
-      // Operation fails because 'name' is required
-      assert.ok(err);
-      assert.ok(err.errors['name']);
-      // acquit:ignore:start
-      --outstanding || done();
-      // acquit:ignore:end
-    });
+    // Operation fails because 'name' is required
+    const err = await Kitten.updateOne({}, unset, opts).then(() => null, err => err);
+    assert.ok(err);
+    assert.ok(err.errors['name']);
   });
 
   /**

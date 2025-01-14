@@ -6,7 +6,7 @@
 
 const start = require('./common');
 
-const SchemaMapOptions = require('../lib/options/SchemaMapOptions');
+const SchemaMapOptions = require('../lib/options/schemaMapOptions');
 const assert = require('assert');
 
 const mongoose = start.mongoose;
@@ -956,6 +956,7 @@ describe('Map', function() {
     });
     doc.myMap.set('abc', { myValue: 'some value' });
     const changes = doc.getChanges();
+
     assert.ok(!changes.$unset);
     assert.deepEqual(changes, { $set: { 'myMap.abc': { myValue: 'some value' } } });
   });
@@ -1101,5 +1102,52 @@ describe('Map', function() {
     assert.ok(Array.isArray(doc.addresses.get('home')));
     assert.equal(doc.addresses.get('home').length, 1);
     assert.equal(doc.addresses.get('home')[0].city, 'London');
+  });
+
+  it('clears nested changes in subdocs (gh-15108)', async function() {
+    const CarSchema = new mongoose.Schema({
+      owners: {
+        type: Map,
+        of: {
+          name: String
+        }
+      }
+    });
+    const CarModel = db.model('Car', CarSchema);
+    const car = await CarModel.create({
+      owners: { abc: { name: 'John' } }
+    });
+
+    car.owners.get('abc').name = undefined;
+    car.owners.delete('abc');
+    assert.deepStrictEqual(car.getChanges(), { $unset: { 'owners.abc': 1 } });
+    await car.save();
+
+    const doc = await CarModel.findById(car._id);
+    assert.strictEqual(doc.owners.get('abc'), undefined);
+  });
+
+  it('clears nested changes in doc arrays (gh-15108)', async function() {
+    const CarSchema = new mongoose.Schema({
+      owners: {
+        type: Map,
+        of: [{
+          _id: false,
+          name: String
+        }]
+      }
+    });
+    const CarModel = db.model('Car', CarSchema);
+    const car = await CarModel.create({
+      owners: { abc: [{ name: 'John' }] }
+    });
+
+    car.owners.get('abc')[0].name = undefined;
+    car.owners.set('abc', [{ name: 'Bill' }]);
+    assert.deepStrictEqual(car.getChanges(), { $inc: { __v: 1 }, $set: { 'owners.abc': [{ name: 'Bill' }] } });
+    await car.save();
+
+    const doc = await CarModel.findById(car._id);
+    assert.deepStrictEqual(doc.owners.get('abc').toObject(), [{ name: 'Bill' }]);
   });
 });

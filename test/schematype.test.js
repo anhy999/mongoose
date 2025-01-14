@@ -4,7 +4,9 @@
  * Module dependencies.
  */
 
-const mongoose = require('./common').mongoose;
+const start = require('./common');
+
+const mongoose = start.mongoose;
 
 const assert = require('assert');
 
@@ -198,25 +200,75 @@ describe('schematype', function() {
     });
   });
 
+  describe('get()', function() {
+    Object.values(mongoose.SchemaTypes).forEach(schemaType => {
+      it(`${schemaType.name} has a \`get\` method`, () => {
+        assert.strictEqual(typeof schemaType.get, 'function');
+      });
+    });
+  });
+
+  it('merges default validators (gh-14070)', function() {
+    class TestSchemaType extends mongoose.SchemaType {}
+    TestSchemaType.set('validate', checkIfString);
+
+    const schemaType = new TestSchemaType('test-path', {
+      validate: checkIfLength2
+    });
+
+    assert.equal(schemaType.validators.length, 2);
+    assert.equal(schemaType.validators[0].validator, checkIfString);
+    assert.equal(schemaType.validators[1].validator, checkIfLength2);
+
+    let err = schemaType.doValidateSync([1, 2]);
+    assert.ok(err);
+    assert.equal(err.name, 'ValidatorError');
+
+    err = schemaType.doValidateSync('foo');
+    assert.ok(err);
+    assert.equal(err.name, 'ValidatorError');
+
+    err = schemaType.doValidateSync('ab');
+    assert.ifError(err);
+
+    function checkIfString(v) {
+      return typeof v === 'string';
+    }
+    function checkIfLength2(v) {
+      return v.length === 2;
+    }
+  });
+
   describe('set()', function() {
     describe('SchemaType.set()', function() {
       it('SchemaType.set, is a function', () => {
         assert.equal(typeof mongoose.SchemaType.set, 'function');
       });
+      it('should allow setting values to a given property gh-13510', async function() {
+        const m = new mongoose.Mongoose();
+        await m.connect(start.uri);
+        m.SchemaTypes.Date.setters.push(v => typeof v === 'string' && /^\d{8}$/.test(v) ? new Date(v.slice(0, 4), +v.slice(4, 6) - 1, v.slice(6, 8)) : v);
+        const testSchema = new m.Schema({
+          myDate: Date
+        });
+        const Test = m.model('Test', testSchema);
+        await Test.deleteMany({});
+        const doc = new Test();
+        doc.myDate = '20220601';
+        await doc.save();
+        await m.connections[0].close();
+        assert(doc.myDate instanceof Date);
+      });
+
+      after(() => {
+        mongoose.SchemaTypes.Date.setters = [];
+      });
     });
 
-    [
-      mongoose.SchemaTypes.String,
-      mongoose.SchemaTypes.Number,
-      mongoose.SchemaTypes.Boolean,
-      mongoose.SchemaTypes.Array,
-      mongoose.SchemaTypes.Buffer,
-      mongoose.SchemaTypes.Date,
-      mongoose.SchemaTypes.ObjectId,
-      mongoose.SchemaTypes.Mixed,
-      mongoose.SchemaTypes.Decimal128,
-      mongoose.SchemaTypes.Map
-    ].forEach((type) => {
+    const typesToTest = Object.values(mongoose.SchemaTypes).
+      filter(t => t.name !== 'SchemaSubdocument' && t.name !== 'SchemaDocumentArray');
+
+    typesToTest.forEach((type) => {
       it(type.name + ', when given a default option, set its', () => {
         // Act
         type.set('someRandomOption', true);
@@ -224,7 +276,52 @@ describe('schematype', function() {
 
         // Assert
         assert.equal(schema.path('test').options.someRandomOption, true);
+
+        delete type.defaultOptions.someRandomOption;
       });
     });
+  });
+  it('demonstrates the `validateAll()` function (gh-6910)', function() {
+    const validateSchema = new Schema({ name: String, password: String });
+    validateSchema.path('name').validate({
+      validator: function(v) {
+        return v.length > 5;
+      },
+      message: 'name must be longer than 5 characters'
+    });
+    validateSchema.path('password').validateAll([
+      {
+        validator: function(v) {
+          return this.name !== v;
+        },
+        message: 'password must not equal name'
+      },
+      {
+        validator: function(v) {
+          return v.length > 5;
+        },
+        message: 'password must be at least six characters'
+      }
+    ]);
+    assert.equal(validateSchema.path('password').validators.length, 2);
+
+    const passwordPath = validateSchema.path('password');
+    assert.throws(
+      () => { throw passwordPath.doValidateSync('john', { name: 'john' }); },
+      /password must not equal name/
+    );
+    assert.throws(
+      () => { throw passwordPath.doValidateSync('short', { name: 'john' }); },
+      /password must be at least six characters/
+    );
+  });
+
+  it('supports getEmbeddedSchemaType() (gh-8389)', function() {
+    const schema = new Schema({ name: String, tags: [String] });
+    assert.strictEqual(schema.path('name').getEmbeddedSchemaType(), undefined);
+    const schemaType = schema.path('tags').getEmbeddedSchemaType();
+    assert.ok(schemaType);
+    assert.equal(schemaType.instance, 'String');
+    assert.equal(schemaType.path, 'tags');
   });
 });

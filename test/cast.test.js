@@ -123,6 +123,12 @@ describe('cast: ', function() {
         { x: { $bitsAnyClear: Buffer.from([3]) } });
     });
 
+    it('with int32 (gh-15170)', function() {
+      const schema = new Schema({ x: 'Int32' });
+      assert.deepEqual(cast(schema, { x: { $bitsAnySet: 3 } }),
+        { x: { $bitsAnySet: 3 } });
+    });
+
     it('throws when invalid', function() {
       const schema = new Schema({ x: Number });
       assert.throws(function() {
@@ -160,6 +166,33 @@ describe('cast: ', function() {
     });
   });
 
+  it('casts $comment (gh-14576)', function() {
+    const schema = new Schema({ name: String });
+
+    let res = cast(schema, {
+      $comment: 'test'
+    });
+    assert.deepStrictEqual(res, { $comment: 'test' });
+
+    res = cast(schema, {
+      $comment: 42
+    });
+    assert.deepStrictEqual(res, { $comment: '42' });
+
+    assert.throws(
+      () => cast(schema, {
+        $comment: { name: 'taco' }
+      }),
+      /\$comment/
+    );
+
+    const schema2 = new Schema({ $comment: Number });
+    res = cast(schema2, {
+      $comment: 42
+    });
+    assert.deepStrictEqual(res, { $comment: 42 });
+  });
+
   it('avoids setting stripped out nested schema values to undefined (gh-11291)', function() {
     const nested = new Schema({}, {
       id: false,
@@ -192,5 +225,41 @@ describe('cast: ', function() {
     assert.deepEqual(res, {
       name: 'foo'
     });
+  });
+
+  it('handles $in with discriminators if $in has exactly 1 element (gh-13492)', function() {
+    const itemStateFooSchema = new Schema({
+      fieldFoo: String
+    });
+
+    const itemSchema = new Schema({
+      state: new Schema(
+        {
+          field: String
+        },
+        {
+          discriminatorKey: 'type'
+        }
+      )
+    });
+
+    itemSchema.path('state').discriminator('FOO', itemStateFooSchema);
+
+    const res = cast(itemSchema, {
+      'state.type': {
+        $in: ['FOO']
+      },
+      'state.fieldFoo': 44
+    });
+    assert.deepStrictEqual(res, {
+      'state.type': { $in: ['FOO'] },
+      'state.fieldFoo': '44'
+    });
+  });
+
+  it('treats unknown operators as passthrough (gh-15170)', function() {
+    const schema = new Schema({ x: Boolean });
+    assert.deepEqual(cast(schema, { x: { $someConditional: 'true' } }),
+      { x: { $someConditional: true } });
   });
 });

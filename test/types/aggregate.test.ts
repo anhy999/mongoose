@@ -1,13 +1,14 @@
-import { Schema, model, Document, Expression, PipelineStage, Types } from 'mongoose';
+import { Schema, model, Document, Expression, PipelineStage, Types, Model, Aggregate } from 'mongoose';
 import { expectType } from 'tsd';
 
 const schema: Schema = new Schema({ name: { type: 'String' } });
 
-interface ITest extends Document {
+interface ITest {
   name?: string;
 }
 
-const Test = model<ITest>('Test', schema);
+const Test = model('Test', schema);
+const AnotherTest = model('AnotherTest', schema);
 
 Test.aggregate([{ $match: { name: 'foo' } }]).exec().then((res: any) => console.log(res));
 
@@ -60,6 +61,10 @@ async function run() {
   expectType<ITest[]>(await Test.aggregate<ITest>().sort({ name: 'desc' }));
   expectType<ITest[]>(await Test.aggregate<ITest>().sort({ name: 'descending' }));
   expectType<ITest[]>(await Test.aggregate<ITest>().sort({ name: { $meta: 'textScore' } }));
+
+  // Aggregate.prototype.model()
+  expectType<Model<any>>(Test.aggregate<ITest>().model());
+  expectType<Aggregate<ITest[]>>(Test.aggregate<ITest>().model(AnotherTest));
 }
 
 function gh12017_1() {
@@ -130,4 +135,20 @@ function gh12311() {
       }
     }
   };
+}
+
+function gh13060() {
+  const schema = new Schema({ status: String });
+  const documentModel = model('Document', schema);
+
+  documentModel.aggregate([{
+    $group: {
+      _id: '$_id',
+      merged: {
+        $mergeObjects: {
+          status: '$status'
+        }
+      }
+    }
+  }]);
 }
