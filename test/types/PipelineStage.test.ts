@@ -5,7 +5,7 @@ import { expectError, expectType } from 'tsd';
 /**
  * $addFields:
  *
- * @see https://docs.mongodb.com/manual/reference/operator/aggregation/addFields/
+ * @see https://www.mongodb.com/docs/manual/reference/operator/aggregation/addFields/
  */
 const addFields1: PipelineStage = {
   $addFields: {
@@ -45,7 +45,7 @@ const addFields6: PipelineStage = {
 /**
  * $bucket
  *
- * @see https://docs.mongodb.com/manual/reference/operator/aggregation/bucket/
+ * @see https://www.mongodb.com/docs/manual/reference/operator/aggregation/bucket/
  */
 
 const bucket1: PipelineStage = {
@@ -101,7 +101,7 @@ const bucket2: PipelineStage = {
 /**
  * $unionWith
  *
- * @see https://docs.mongodb.com/manual/reference/operator/aggregation/unionWith/
+ * @see https://www.mongodb.com/docs/manual/reference/operator/aggregation/unionWith/
  */
 
 const unionWith1: PipelineStage = { $unionWith: { coll: 'warehouses', pipeline: [{ $project: { state: 1, _id: 0 } }] } };
@@ -112,7 +112,7 @@ const unionWith4: PipelineStage = { $unionWith: { coll: 'sales2019q2', pipeline:
 /**
  * $unset
  *
- * @see https://docs.mongodb.com/manual/reference/operator/aggregation/unset/
+ * @see https://www.mongodb.com/docs/manual/reference/operator/aggregation/unset/
  */
 const unset1: PipelineStage = { $unset: '<field.nestedfield>' };
 const unset2: PipelineStage = { $unset: ['isbn', 'copies'] };
@@ -122,7 +122,7 @@ const unset3: PipelineStage = { $unset: ['isbn', 'author.first', 'copies.warehou
 /**
  * $unwind
  *
- * @see https://docs.mongodb.com/manual/reference/operator/aggregation/unwind/
+ * @see https://www.mongodb.com/docs/manual/reference/operator/aggregation/unwind/
  */
 
 const unwind1: PipelineStage = { $unwind: '$sizes' };
@@ -217,6 +217,8 @@ const project14: PipelineStage = {
   }
 };
 const project15: PipelineStage = { $project: { item: 1, result: { $not: [{ $gt: ['$qty', 250] }] } } };
+const project16: PipelineStage = { $project: { maxScores: { $maxN: { input: '$scores', n: 3 } } } };
+const project17: PipelineStage = { $project: { first3Scores: { $firstN: { input: '$scores', n: 3 } } } };
 
 const sort1: PipelineStage = { $sort: { count: -1 } };
 const sortByCount1: PipelineStage = { $sortByCount: '$tags' };
@@ -306,6 +308,21 @@ const setWindowFields4: PipelineStage = {
     output: {
       expMovingAvgForStock: {
         $expMovingAvg: { input: '$price', alpha: 0.75 }
+      }
+    }
+  }
+};
+
+const setWindowFields5: PipelineStage = {
+  $setWindowFields: {
+    partitionBy: '$gameId',
+    sortBy: { score: 1 },
+    output: {
+      minScores: {
+        $firstN: { input: '$score', n: 3 }
+      },
+      maxScores: {
+        $lastN: { input: '$score', n: 3 }
       }
     }
   }
@@ -419,6 +436,27 @@ const group5: PipelineStage = {
   }
 };
 const group6: PipelineStage = { $group: { _id: '$author', books: { $push: '$title' } } };
+const group7: PipelineStage = {
+  $group: {
+    _id: '$gameId',
+    topPlayers: {
+      $topN: {
+        output: ['$playerId', '$score'],
+        sortBy: { score: -1 },
+        n: 3
+      }
+    },
+    bottomPlayers: {
+      $bottomN: {
+        output: ['$playerId', '$score'],
+        sortBy: { score: 1 },
+        n: 3
+      }
+    },
+    maxScores: { $maxN: { input: '$score', n: 3 } },
+    minScores: { $minN: { input: '$score', n: 3 } }
+  }
+};
 
 const stages1: PipelineStage[] = [
   // First Stage
@@ -520,3 +558,20 @@ function gh12269() {
     }
   };
 }
+const vectorSearchStages: PipelineStage[] = [
+  {
+    $vectorSearch: {
+      index: 'title_vector_index',
+      path: 'embedding',
+      queryVector: [0.522, 0.123, 0.487],
+      limit: 5,
+      numCandidates: 100
+    }
+  },
+  {
+    $project: {
+      title: 1,
+      score: { $meta: 'searchScore' }
+    }
+  }
+];

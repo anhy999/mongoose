@@ -1,4 +1,4 @@
-## FAQ
+# FAQ
 
 <style>
 hr {
@@ -11,6 +11,19 @@ hr {
   width: 100%;
 }
 </style>
+
+<hr id="localhost-ipv6" />
+
+<a class="anchor" href="#localhost-ipv6">**Q**</a>. I get an error `connect ECONNREFUSED ::1:27017` when connecting to `localhost`. Why?
+
+The easy solution is to replace `localhost` with `127.0.0.1`.
+
+The reason why this error happens is that Node.js 18 and up prefer IPv6 addresses over IPv4 by default.
+And, most Linux and OSX machines have a `::1     localhost` entry in `/etc/hosts` by default.
+That means that Node.js 18 will assume that `localhost` means the IPv6 `::1` address.
+And MongoDB doesn't accept IPv6 connections by default.
+
+You can also fix this error by [enabling IPv6 support on your MongoDB server](https://www.mongodb.com/docs/manual/core/security-mongodb-configuration/).
 
 <hr id="operation-buffering-timed-out" />
 
@@ -37,9 +50,11 @@ const Test = db.model('Test', schema);
 await Test.findOne(); // Will throw "Operation timed out" error because `db` isn't connected to MongoDB
 ```
 
+<hr id="not-local" />
+
 <a class="anchor" href="#not-local"> **Q**</a>. I am able to connect locally but when I try to connect to MongoDB Atlas I get this error. What gives?
 
-You must ensure that you have whitelisted your ip on [mongodb](https://docs.atlas.mongodb.com/security/ip-access-list/) to allow Mongoose to connect.
+You must ensure that you have whitelisted your ip on [mongodb](https://www.mongodb.com/docs/atlas/security/ip-access-list/) to allow Mongoose to connect.
 You can allow access from all ips with `0.0.0.0/0`.
 
 <hr id="not-a-function" />
@@ -55,7 +70,7 @@ If you're storing schemas or models in a separate npm package, please list Mongo
 <a class="anchor" href="#unique-doesnt-work">**Q**</a>. I declared a schema property as `unique` but I can still save duplicates. What gives?
 
 **A**. Mongoose doesn't handle `unique` on its own: `{ name: { type: String, unique: true } }`
-is just a shorthand for creating a [MongoDB unique index on `name`](https://docs.mongodb.com/manual/core/index-unique/).
+is just a shorthand for creating a [MongoDB unique index on `name`](https://www.mongodb.com/docs/manual/core/index-unique/).
 For example, if MongoDB doesn't already have a unique index on `name`, the below code will not error despite the fact that `unique` is true.
 
 ```javascript
@@ -64,9 +79,8 @@ const schema = new mongoose.Schema({
 });
 const Model = db.model('Test', schema);
 
-Model.create([{ name: 'Val' }, { name: 'Val' }], function(err) {
-  console.log(err); // No error, unless index was already built
-});
+// No error, unless index was already built
+await Model.create([{ name: 'Val' }, { name: 'Val' }]);
 ```
 
 However, if you wait for the index to build using the `Model.on('index')` event, attempts to save duplicates will correctly error.
@@ -77,26 +91,17 @@ const schema = new mongoose.Schema({
 });
 const Model = db.model('Test', schema);
 
-Model.on('index', function(err) { // <-- Wait for model's indexes to finish
-  assert.ifError(err);
-  Model.create([{ name: 'Val' }, { name: 'Val' }], function(err) {
-    console.log(err);
-  });
-});
-
-// Promise based alternative. `init()` returns a promise that resolves
-// when the indexes have finished building successfully. The `init()`
+// Wait for model's indexes to finish. The `init()`
 // function is idempotent, so don't worry about triggering an index rebuild.
-Model.init().then(function() {
-  Model.create([{ name: 'Val' }, { name: 'Val' }], function(err) {
-    console.log(err);
-  });
-});
+await Model.init();
+
+// Throws a duplicate key error
+await Model.create([{ name: 'Val' }, { name: 'Val' }]);
 ```
 
 MongoDB persists indexes, so you only need to rebuild indexes if you're starting
 with a fresh database or you ran `db.dropDatabase()`. In a production environment,
-you should [create your indexes using the MongoDB shell](https://docs.mongodb.com/manual/reference/method/db.collection.createIndex/)
+you should [create your indexes using the MongoDB shell](https://www.mongodb.com/docs/manual/reference/method/db.collection.createIndex/)
 rather than relying on mongoose to do it for you. The `unique` option for schemas is
 convenient for development and documentation, but mongoose is *not* an index management solution.
 
@@ -132,9 +137,9 @@ is undefined on the underlying [POJO](guide.html#minimize).
 
 <hr id="arrow-functions" />
 
-<a class="anchor" href="#arrow-functions">**Q**</a>. I'm using an arrow function for a [virtual](guide.html#virtuals), [middleware](middleware.html), [getter](api.html#schematype_SchemaType-get)/[setter](api.html#schematype_SchemaType-set), or [method](guide.html#methods) and the value of `this` is wrong.
+<a class="anchor" href="#arrow-functions">**Q**</a>. I'm using an arrow function for a [virtual](guide.html#virtuals), [middleware](middleware.html), [getter](api/schematype.html#schematype_SchemaType-get)/[setter](api/schematype.html#schematype_SchemaType-set), or [method](guide.html#methods) and the value of `this` is wrong.
 
-**A**. Arrow functions [handle the `this` keyword much differently than conventional functions](https://masteringjs.io/tutorials/fundamentals/arrow#why-not-arrow-functions).
+**A**. Arrow functions [handle the `this` keyword differently than conventional functions](https://masteringjs.io/tutorials/fundamentals/arrow#why-not-arrow-functions).
 Mongoose getters/setters depend on `this` to give you access to the document that you're writing to, but this functionality does not work with arrow functions. Do **not** use arrow functions for mongoose getters/setters unless do not intend to access the document in the getter/setter.
 
 ```javascript
@@ -236,16 +241,16 @@ for more information.
 
 ```javascript
 // all executed methods log output to console
-mongoose.set('debug', true)
-    
+mongoose.set('debug', true);
+
 // disable colors in debug mode
-mongoose.set('debug', { color: false })
+mongoose.set('debug', { color: false });
 
 // get mongodb-shell friendly output (ISODate)
-mongoose.set('debug', { shell: true })
+mongoose.set('debug', { shell: true });
 ```
 
-For more debugging options (streams, callbacks), see the ['debug' option under `.set()`](api.html#mongoose_Mongoose-set).
+For more debugging options (streams, callbacks), see the ['debug' option under `.set()`](api/mongoose.html#mongoose_Mongoose-set).
 
 <hr id="callback_never_executes" />
 
@@ -288,7 +293,7 @@ compiled" when I use nodemon / a testing framework?
 **A**. `mongoose.model('ModelName', schema)` requires 'ModelName' to be
 unique, so you can access the model by using `mongoose.model('ModelName')`.
 If you put `mongoose.model('ModelName', schema);` in a
-[mocha `beforeEach()` hook](https://mochajs.org/#hooks), this code will
+[mocha `beforeEach()` hook](https://masteringjs.io/tutorials/mocha/beforeeach), this code will
 attempt to create a new model named 'ModelName' before **every** test,
 and so you will get an error. Make sure you only create a new model with
 a given name **once**. If you need to create multiple models with the
@@ -296,7 +301,7 @@ same name, create a new connection and bind the model to the connection.
 
 ```javascript
 const mongoose = require('mongoose');
-const connection = mongoose.createConnection(..);
+const connection = mongoose.createConnection(/* ... */);
 
 // use mongoose.Schema
 const kittySchema = mongoose.Schema({ name: String });
@@ -309,7 +314,7 @@ const Kitten = connection.model('Kitten', kittySchema);
 
 <a class="anchor" href="#array-defaults">**Q**</a>. How can I change mongoose's default behavior of initializing an array path to an empty array so that I can require real data on document creation?
 
-**A**. You can set the default of the array to a function that returns `undefined`.
+**A**. You can set the default of the array to `undefined`.
 
 ```javascript
 const CollectionSchema = new Schema({
@@ -321,16 +326,16 @@ const CollectionSchema = new Schema({
 ```
 
 <hr id="initialize-array-path-null" />
-    
+
 <a class="anchor" href="#initialize-array-path-null">**Q**</a>. How can I initialize an array path to `null`?
 
-**A**. You can set the default of the array to a function that returns `null`.
+**A**. You can set the default of the array to [`null`](https://masteringjs.io/tutorials/fundamentals/null).
 
 ```javascript
 const CollectionSchema = new Schema({
   field1: {
     type: [String],
-    default: () => { return null; }
+    default: null
   }
 });
 ```
@@ -381,7 +386,7 @@ validating, and then subsequently invalidating the same path.
 
 <a class="anchor" href="#objectid-validation">**Q**</a>. Why is **any** 12 character string successfully cast to an ObjectId?
 
-**A**. Technically, any 12 character string is a valid [ObjectId](https://docs.mongodb.com/manual/reference/bson-types/#objectid).
+**A**. Technically, any 12 character string is a valid [ObjectId](https://www.mongodb.com/docs/manual/reference/bson-types/#objectid).
 Consider using a regex like `/^[a-f0-9]{24}$/` to test whether a string is exactly 24 hex characters.
 
 <hr id="map-keys-strings" />

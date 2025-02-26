@@ -1,5 +1,16 @@
-import { Schema, model, Model, Document, Types } from 'mongoose';
-import { expectAssignable, expectError, expectType } from 'tsd';
+import {
+  Schema,
+  model,
+  Model,
+  Query,
+  Types,
+  HydratedDocument,
+  HydratedArraySubdocument,
+  HydratedSingleSubdocument,
+  DefaultSchemaOptions
+} from 'mongoose';
+import { DeleteResult } from 'mongodb';
+import { expectAssignable, expectError, expectNotAssignable, expectType } from 'tsd';
 import { autoTypedModel } from './models.test';
 import { autoTypedModelConnection } from './connection.test';
 import { AutoTypedSchemaType } from './schema.test';
@@ -21,22 +32,18 @@ interface ITestBase {
   name?: string;
 }
 
-interface ITest extends ITestBase, Document {}
+type ITest = ITestBase;
+type TestDocument = ReturnType<Model<{ name?: string }>['hydrate']>;
 
 const Test = model<ITest>('Test', schema);
 
 void async function main() {
-  const doc: ITest = await Test.findOne().orFail();
+  const doc = await Test.findOne().orFail();
 
-  expectType<Promise<ITest>>(doc.remove());
-  expectType<void>(doc.remove({}, (err, doc) => {
-    expectType<Error | null>(err);
-    expectType<any>(doc);
-  }));
-  expectType<void>(doc.remove((err, doc) => {
-    expectType<Error | null>(err);
-    expectType<any>(doc);
-  }));
+  expectType<DeleteResult>(await doc.deleteOne());
+  expectType<TestDocument | null>(await doc.deleteOne().findOne());
+  expectAssignable<{ _id: Types.ObjectId, name?: string } | null>(await doc.deleteOne().findOne().lean());
+  expectNotAssignable<TestDocument | null>(await doc.deleteOne().findOne().lean());
 }();
 
 
@@ -58,14 +65,6 @@ void async function run() {
   const x = test.save();
   expectAssignable<Promise<ITest & { _id: any; }>>(test.save());
   expectAssignable<Promise<ITest & { _id: any; }>>(test.save({}));
-  expectType<void>(test.save({}, (err, doc) => {
-    expectType<Error | null>(err);
-    expectAssignable<ITest & { _id: any; }>(doc);
-  }));
-  expectType<void>(test.save((err, doc) => {
-    expectType<Error | null>(err);
-    expectAssignable<ITest & { _id: any; }>(doc);
-  }));
 })();
 
 function gh10526<U extends ITest>(arg1: Model<U>) {
@@ -213,10 +212,6 @@ function autoTypedDocumentConnection() {
 }
 
 async function gh11960() {
-  type DocumentType<T> = Document<any> & T;
-  type SubDocumentType<T> = DocumentType<T> & Types.Subdocument;
-  type ArraySubDocumentType<T> = DocumentType<T> & Types.ArraySubdocument;
-
   interface Nested {
     dummy?: string;
   }
@@ -224,22 +219,39 @@ async function gh11960() {
   interface Parent {
     username?: string;
     map?: Map<string, string>;
-    nested?: SubDocumentType<Nested>;
-    nestedArray?: ArraySubDocumentType<Nested>[];
+    nested?: Nested;
+    nestedArray?: Nested[];
   }
+
+  type ParentDocument = HydratedDocument<Parent, {
+    nested: HydratedSingleSubdocument<Nested>,
+    nestedArray: HydratedArraySubdocument<Nested>[]
+  }>;
 
   const NestedSchema = new Schema({
     dummy: { type: String }
   });
 
-  const ParentSchema = new Schema({
+  type ParentModelType = Model<Parent, {}, {}, {}, ParentDocument>;
+
+  const ParentSchema = new Schema<
+  Parent,
+  ParentModelType,
+  {},
+  {},
+  {},
+  {},
+  DefaultSchemaOptions,
+  Parent,
+  ParentDocument
+  >({
     username: { type: String },
     map: { type: Map, of: String },
     nested: { type: NestedSchema },
     nestedArray: [{ type: NestedSchema }]
   });
 
-  const ParentModel = model<DocumentType<Parent>>('Parent', ParentSchema);
+  const ParentModel = model<Parent, ParentModelType>('Parent', ParentSchema);
 
   {
     const doc = new ParentModel({
@@ -249,7 +261,7 @@ async function gh11960() {
       nestedArray: [{ dummy: 'hello again' }]
     });
 
-    expectType<Document<any, any, any> & Parent & { _id: Types.ObjectId }>(doc);
+    expectType<ParentDocument>(doc);
     expectType<Map<string, string> | undefined>(doc.map);
     doc.nested!.parent();
     doc.nestedArray?.[0].parentArray();
@@ -263,7 +275,7 @@ async function gh11960() {
       nestedArray: [{ dummy: 'hello again' }]
     });
 
-    expectType<Document<any, any, any> & Parent & { _id: Types.ObjectId }>(doc);
+    expectType<ParentDocument>(doc);
     expectType<Map<string, string> | undefined>(doc.map);
     doc.nested!.parent();
     doc.nestedArray?.[0].parentArray();
@@ -284,4 +296,166 @@ function gh12290() {
   user.isDirectModified(['name', 'age']);
   user.isDirectModified('name age');
   user.isDirectModified('name');
+}
+
+function gh13878() {
+  const schema = new Schema({
+    name: String,
+    age: Number
+  });
+  const User = model('User', schema);
+  const user = new User({ name: 'John', age: 30 });
+  expectType<typeof User>(user.$model());
+  expectType<typeof User>(user.model());
+}
+
+function gh13094() {
+  type UserDocumentNever = HydratedDocument<{ name: string }, Record<string, never>>;
+
+  const doc: UserDocumentNever = null as any;
+  expectType<string>(doc.name);
+
+  // The following currently fails.
+  /* type UserDocumentUnknown = HydratedDocument<{ name: string }, Record<string, unknown>>;
+
+  const doc2: UserDocumentUnknown = null as any;
+  expectType<string>(doc2.name); */
+
+  // The following currently fails.
+  /* type UserDocumentAny = HydratedDocument<{ name: string }, Record<string, any>>;
+
+  const doc3: UserDocumentAny = null as any;
+  expectType<string>(doc3.name); */
+}
+
+function gh13738() {
+  interface IPerson {
+    age: number;
+    dob: Date;
+    settings: {
+      theme: string;
+      alerts: {
+        sms: boolean;
+      }
+    }
+  }
+
+  const schema = new Schema<IPerson>({
+    age: Number,
+    dob: Date,
+    settings: {
+      theme: String,
+      alerts: {
+        sms: Boolean
+      }
+    }
+  });
+
+  const Person = model<IPerson>('Person', schema);
+
+  const person = new Person({ name: 'person', dob: new Date(), settings: { alerts: { sms: true }, theme: 'light' } });
+
+  expectType<number>(person.get('age'));
+  expectType<Date>(person.get('dob'));
+  expectType<{ theme: string; alerts: { sms: boolean } }>(person.get('settings'));
+}
+
+async function gh12959() {
+  const subdocSchema = new Schema({ foo: { type: 'string', required: true } });
+
+  const schema = new Schema({
+    subdocArray: { type: [subdocSchema], required: true }
+  });
+
+  const Model = model('test', schema);
+
+  const doc = await Model.findById('id').orFail();
+  expectType<Types.ObjectId>(doc._id);
+  expectType<number>(doc.__v);
+
+  expectError(doc.subdocArray[0].__v);
+}
+
+async function gh14876() {
+  type CarObjectInterface = {
+    make: string;
+    model: string;
+    year: number;
+    owner: Types.ObjectId;
+  };
+  const carSchema = new Schema<CarObjectInterface>({
+    make: { type: String, required: true },
+    model: { type: String, required: true },
+    year: { type: Number, required: true },
+    owner: { type: Schema.Types.ObjectId, ref: 'User' }
+  });
+
+  type UserObjectInterface = {
+    name: string;
+    age: number;
+  };
+  const userSchema = new Schema<UserObjectInterface>({
+    name: String,
+    age: Number
+  });
+
+  const Car = model<CarObjectInterface>('Car', carSchema);
+  const User = model<UserObjectInterface>('User', userSchema);
+
+  const user = await User.create({ name: 'John', age: 25 });
+  const car = await Car.create({
+    make: 'Toyota',
+    model: 'Camry',
+    year: 2020,
+    owner: user._id
+  });
+
+  const populatedCar = await Car.findById(car._id)
+    .populate<{ owner: UserObjectInterface }>('owner')
+    .exec();
+
+  if (!populatedCar) return;
+
+  console.log(populatedCar.owner.name); // outputs John
+
+  const depopulatedCar = populatedCar.depopulate<{ owner: Types.ObjectId }>('owner');
+
+  expectType<UserObjectInterface>(populatedCar.owner);
+  expectType<Types.ObjectId>(depopulatedCar.owner);
+}
+
+async function gh15077() {
+  type Foo = {
+    state: 'on' | 'off';
+  };
+
+  const fooSchema = new Schema<Foo>(
+    {
+      state: {
+        type: String,
+        enum: ['on', 'off']
+      }
+    },
+    { timestamps: true }
+  );
+
+  const fooModel = model('foo', fooSchema);
+
+  let foundFoo = await fooModel
+    .findOne({
+      state: 'on'
+    })
+    .lean()
+    .exec();
+
+  if (!foundFoo) {
+    const newFoo = {
+      state: 'on'
+      // extra props but irrelevant
+    };
+
+    const createdFoo = await fooModel.create(newFoo);
+
+    foundFoo = createdFoo.toObject();
+  }
 }

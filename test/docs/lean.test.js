@@ -1,7 +1,6 @@
 'use strict';
 
 const assert = require('assert');
-const v8Serialize = require('v8').serialize;
 const start = require('../common');
 
 // This file is in `es-next` because it uses async/await for convenience
@@ -22,7 +21,17 @@ describe('Lean Tutorial', function() {
     mongoose.deleteModel(/Group/);
   });
 
+  after(async() => {
+    await mongoose.disconnect();
+  });
+
   it('compare sizes lean vs not lean', async function() {
+    // acquit:ignore:start
+    if (typeof Deno !== 'undefined') {
+      return this.skip(); // Deno does not support v8.serialize()
+    }
+    const v8Serialize = require('v8').serialize;
+    // acquit:ignore:end
     const schema = new mongoose.Schema({ name: String });
     const MyModel = mongoose.model('Test', schema);
 
@@ -33,7 +42,7 @@ describe('Lean Tutorial', function() {
     const leanDoc = await MyModel.findOne().lean();
 
     v8Serialize(normalDoc).length; // approximately 180
-    v8Serialize(leanDoc).length; // 32, about 5x smaller!
+    v8Serialize(leanDoc).length; // approximately 55, about 3x smaller!
 
     // In case you were wondering, the JSON form of a Mongoose doc is the same
     // as the POJO. This additional memory only affects how much memory your
@@ -41,7 +50,7 @@ describe('Lean Tutorial', function() {
     JSON.stringify(normalDoc).length === JSON.stringify(leanDoc).length; // true
     // acquit:ignore:start
     assert.ok(v8Serialize(normalDoc).length >= 150 && v8Serialize(normalDoc).length <= 200, v8Serialize(normalDoc).length);
-    assert.equal(v8Serialize(leanDoc).length, 32);
+    assert.ok(v8Serialize(leanDoc).length === 55 || v8Serialize(leanDoc).length === 32, v8Serialize(leanDoc).length);
     assert.equal(JSON.stringify(normalDoc).length, JSON.stringify(leanDoc).length);
     // acquit:ignore:end
   });
@@ -172,7 +181,7 @@ describe('Lean Tutorial', function() {
 
     // Initialize data
     const g = await Group.create({ name: 'DS9 Characters' });
-    const people = await Person.create([
+    await Person.create([
       { name: 'Benjamin Sisko', groupId: g._id },
       { name: 'Kira Nerys', groupId: g._id }
     ]);
@@ -192,6 +201,37 @@ describe('Lean Tutorial', function() {
     // acquit:ignore:start
     assert.equal(group.members[0].name, 'Benjamin Sisko');
     assert.equal(group.members[1].name, 'Kira Nerys');
+    // acquit:ignore:end
+  });
+
+  it('bigint', async function() {
+    const Person = mongoose.model('Person', new mongoose.Schema({
+      name: String,
+      age: BigInt
+    }));
+    // acquit:ignore:start
+    await Person.deleteMany({});
+    // acquit:ignore:end
+    // Mongoose will convert `age` to a BigInt
+    const { age } = await Person.create({ name: 'Benjamin Sisko', age: 37 });
+    typeof age; // 'bigint'
+
+    // By default, if you store a document with a BigInt property in MongoDB and you
+    // load the document with `lean()`, the BigInt property will be a number
+    let person = await Person.findOne({ name: 'Benjamin Sisko' }).lean();
+    typeof person.age; // 'number'
+    // acquit:ignore:start
+    assert.equal(typeof person.age, 'number');
+    assert.equal(person.age, 37);
+    // acquit:ignore:end
+
+    // Set the `useBigInt64` option to opt in to converting MongoDB longs to BigInts.
+    person = await Person.findOne({ name: 'Benjamin Sisko' }).
+      setOptions({ useBigInt64: true }).
+      lean();
+    typeof person.age; // 'bigint'
+    // acquit:ignore:start
+    assert.equal(typeof person.age, 'bigint');
     // acquit:ignore:end
   });
 });

@@ -12,11 +12,11 @@ describe('transactions', function() {
   this.timeout(10000);
 
   before(async function() {
-    if (!process.env.REPLICA_SET) {
+    if (!process.env.REPLICA_SET && !process.env.START_REPLICA_SET) {
       _skipped = true;
       this.skip();
     }
-    db = start({ replicaSet: process.env.REPLICA_SET });
+    db = start(process.env.REPLICA_SET ? { replicaSet: process.env.REPLICA_SET } : {});
     try {
       await db.asPromise();
 
@@ -76,7 +76,6 @@ describe('transactions', function() {
     // acquit:ignore:start
     const Customer = db.model('Customer_withTrans', new Schema({ name: String }));
     // acquit:ignore:end
-
     let session = null;
     return Customer.createCollection().
       then(() => Customer.startSession()).
@@ -316,38 +315,400 @@ describe('transactions', function() {
   it('remove, update, updateOne (gh-7455)', async function() {
     const Character = db.model('gh7455_Character', new Schema({ name: String, title: String }, { versionKey: false }));
 
-      await Character.create({ name: 'Tyrion Lannister' });
-      const session = await db.startSession();
+    await Character.create({ name: 'Tyrion Lannister' });
+    const session = await db.startSession();
 
-      session.startTransaction();
+    session.startTransaction();
 
-      const tyrion = await Character.findOne().session(session);
+    const tyrion = await Character.findOne().session(session);
 
-      await tyrion.updateOne({ title: 'Hand of the King' });
+    await tyrion.updateOne({ title: 'Hand of the King' });
 
-      // Session isn't committed
-      assert.equal(await Character.countDocuments({ title: /hand/i }), 0);
+    // Session isn't committed
+    assert.equal(await Character.countDocuments({ title: /hand/i }), 0);
 
-      await tyrion.remove();
+    await tyrion.deleteOne();
 
-      // Undo both update and delete since doc should pull from `$session()`
-      await session.abortTransaction();
-      session.endSession();
+    // Undo both update and delete since doc should pull from `$session()`
+    await session.abortTransaction();
+    session.endSession();
 
-      const fromDb = await Character.findOne().then(doc => doc.toObject());
-      delete fromDb._id;
-      assert.deepEqual(fromDb, { name: 'Tyrion Lannister' });
+    const fromDb = await Character.findOne().then(doc => doc.toObject());
+    delete fromDb._id;
+    assert.deepEqual(fromDb, { name: 'Tyrion Lannister' });
+  });
+
+  it('distinct (gh-8006)', async function() {
+    const Character = db.model('gh8006_Character', new Schema({ name: String, rank: String }, { versionKey: false }));
+
+    const session = await db.startSession();
+
+    session.startTransaction();
+    await Character.create([
+      { name: 'Will Riker', rank: 'Commander' },
+      { name: 'Jean-Luc Picard', rank: 'Captain' }
+    ], { session, ordered: true });
+
+    let names = await Character.distinct('name', {}, { session });
+    assert.deepStrictEqual(names.sort(), ['Jean-Luc Picard', 'Will Riker']);
+
+    names = await Character.distinct('name', { rank: 'Captain' }, { session });
+    assert.deepStrictEqual(names.sort(), ['Jean-Luc Picard']);
+
+    // Undo both update and delete since doc should pull from `$session()`
+    await session.abortTransaction();
+    session.endSession();
   });
 
   it('save() with no changes (gh-8571)', async function() {
-      const Test = db.model('Test', Schema({ name: String }));
+    db.deleteModel(/Test/);
+    const Test = db.model('Test', Schema({ name: String }));
+
+    await Test.createCollection();
+    const session = await db.startSession();
+    await session.withTransaction(async() => {
+      const test = await Test.create([{}], { session }).then(res => res[0]);
+      await test.save(); // throws DocumentNotFoundError
+    });
+    await session.endSession();
+  });
+
+  describe('transactionAsyncLocalStorage option', function() {
+    let m;
+    before(async function() {
+      m = new mongoose.Mongoose();
+      m.set('transactionAsyncLocalStorage', true);
+
+      await m.connect(start.uri);
+    });
+
+    after(async function() {
+      await m.disconnect();
+    });
+
+    it('transaction() sets `session` by default if transactionAsyncLocalStorage option is set', async function() {
+      const Test = m.model('Test', m.Schema({ name: String }));
 
       await Test.createCollection();
+      await Test.deleteMany({});
+
+      let doc = new Test({ name: 'test_transactionAsyncLocalStorage' });
+      await assert.rejects(
+        () => m.connection.transaction(async() => {
+          await doc.save();
+
+          await Test.updateOne({ name: 'foo' }, { name: 'foo' }, { upsert: true });
+
+          let docs = await Test.aggregate([{ $match: { _id: doc._id } }]);
+          assert.equal(docs.length, 1);
+
+          const aggCursor = Test.aggregate([{ $match: { _id: doc._id } }]).cursor();
+          docs = [await aggCursor.next()];
+          assert.equal(docs[0].name, 'test_transactionAsyncLocalStorage');
+
+          docs = await Test.find({ _id: doc._id });
+          assert.equal(docs.length, 1);
+
+          docs = await async function test() {
+            return await Test.findOne({ _id: doc._id });
+          }();
+          assert.equal(doc.name, 'test_transactionAsyncLocalStorage');
+
+          await Test.insertMany([{ name: 'bar' }]);
+
+          throw new Error('Oops!');
+        }),
+        /Oops!/
+      );
+      let exists = await Test.exists({ _id: doc._id });
+      assert.ok(!exists);
+
+      exists = await Test.exists({ name: 'foo' });
+      assert.ok(!exists);
+
+      exists = await Test.exists({ name: 'bar' });
+      assert.ok(!exists);
+
+      doc = new Test({ name: 'test_transactionAsyncLocalStorage' });
+      await assert.rejects(
+        () => m.connection.transaction(async() => {
+          await doc.save({ session: null });
+          throw new Error('Oops!');
+        }),
+        /Oops!/
+      );
+      exists = await Test.exists({ _id: doc._id });
+      assert.ok(exists);
+    });
+  });
+
+  it('transaction() resets $isNew on error', async function() {
+    db.deleteModel(/Test/);
+    const Test = db.model('Test', Schema({ name: String }));
+
+    await Test.createCollection();
+    await Test.deleteMany({});
+
+    const doc = new Test({ name: 'test' });
+    assert.ok(doc.$isNew);
+    await assert.rejects(
+      db.transaction(async(session) => {
+        await doc.save({ session });
+        throw new Error('Oops!');
+      }),
+      /Oops!/
+    );
+    assert.ok(doc.$isNew);
+    const exists = await Test.exists({ _id: doc._id });
+    assert.ok(!exists);
+  });
+
+  it('transaction() resets $isNew between retries (gh-13698)', async function() {
+    db.deleteModel(/Test/);
+    const Test = db.model('Test', Schema({ name: String }));
+
+    await Test.createCollection();
+    await Test.deleteMany({});
+
+    const doc = new Test({ name: 'test' });
+    assert.ok(doc.$isNew);
+    let retryCount = 0;
+    await db.transaction(async(session) => {
+      assert.ok(doc.$isNew);
+      await doc.save({ session });
+      if (++retryCount < 3) {
+        throw new mongoose.mongo.MongoServerError({
+          errorLabels: ['TransientTransactionError']
+        });
+      }
+    });
+
+    const docs = await Test.find();
+    assert.equal(docs.length, 1);
+    assert.equal(docs[0].name, 'test');
+  });
+
+  it('handles resetting array state with $set atomic (gh-13698)', async function() {
+    db.deleteModel(/Test/);
+    const subItemSchema = new mongoose.Schema(
+      {
+        name: { type: String, required: true }
+      },
+      { _id: false }
+    );
+
+    const itemSchema = new mongoose.Schema(
+      {
+        name: { type: String, required: true },
+        subItems: { type: [subItemSchema], required: true }
+      },
+      { _id: false }
+    );
+
+    const schema = new mongoose.Schema({
+      items: { type: [itemSchema], required: true }
+    });
+
+    const Test = db.model('Test', schema);
+
+    const { _id } = await Test.create({
+      items: [
+        { name: 'test1', subItems: [{ name: 'x1' }] },
+        { name: 'test2', subItems: [{ name: 'x2' }] }
+      ]
+    });
+
+    const doc = await Test.findById(_id).orFail();
+    let attempt = 0;
+
+    const res = await db.transaction(async(session) => {
+      await doc.save({ session });
+
+      if (attempt === 0) {
+        attempt += 1;
+        throw new mongoose.mongo.MongoServerError({
+          message: 'Test transient transaction failures & retries',
+          errorLabels: [mongoose.mongo.MongoErrorLabel.TransientTransactionError]
+        });
+      }
+
+      return { answer: 42 };
+    });
+    assert.deepStrictEqual(res, { answer: 42 });
+
+    const { items } = await Test.findById(_id).orFail();
+    assert.ok(Array.isArray(items));
+    assert.equal(items.length, 2);
+    assert.equal(items[0].name, 'test1');
+    assert.equal(items[0].subItems.length, 1);
+    assert.equal(items[0].subItems[0].name, 'x1');
+    assert.equal(items[1].name, 'test2');
+    assert.equal(items[1].subItems.length, 1);
+    assert.equal(items[1].subItems[0].name, 'x2');
+  });
+
+  it('transaction() retains modified status for documents created outside of the transaction then modified inside the transaction (gh-13973)', async function() {
+    db.deleteModel(/Test/);
+    const Test = db.model('Test', Schema({ status: String }));
+
+    await Test.createCollection();
+    await Test.deleteMany({});
+
+    const { _id } = await Test.create({ status: 'test' });
+    const doc = await Test.findById(_id);
+
+    let i = 0;
+    await db.transaction(async(session) => {
+      doc.status = 'test2';
+      assert.ok(doc.$isModified('status'));
+      await doc.save({ session });
+      if (++i < 3) {
+        throw new mongoose.mongo.MongoServerError({
+          errorLabels: ['TransientTransactionError']
+        });
+      }
+    });
+
+    assert.equal(i, 3);
+  });
+
+  it('transaction() avoids duplicating atomic operations (gh-14848)', async function() {
+    db.deleteModel(/Test/);
+    const subItemSchema = new mongoose.Schema(
+      {
+        name: { type: String, required: true }
+      },
+      { _id: false }
+    );
+    const itemSchema = new mongoose.Schema(
+      {
+        name: { type: String, required: true },
+        subItems: { type: [subItemSchema], required: true }
+      },
+      { _id: false }
+    );
+    const schema = new mongoose.Schema({
+      items: { type: [itemSchema], required: true }
+    });
+    const Test = db.model('Test', schema);
+
+
+    await Test.createCollection();
+    await Test.deleteMany({});
+
+    const { _id } = await Test.create({
+      items: [
+        { name: 'test1', subItems: [{ name: 'x1' }] },
+        { name: 'test2', subItems: [{ name: 'x2' }] }
+      ]
+    });
+
+    let doc = await Test.findById(_id);
+
+    doc.items.push({ name: 'test3', subItems: [{ name: 'x3' }] });
+
+    let i = 0;
+    await db.transaction(async(session) => {
+      await doc.save({ session });
+      if (++i < 3) {
+        throw new mongoose.mongo.MongoServerError({
+          errorLabels: ['TransientTransactionError']
+        });
+      }
+    });
+
+    assert.equal(i, 3);
+
+    doc = await Test.findById(_id);
+    assert.equal(doc.items.length, 3);
+  });
+
+  it('doesnt apply schema write concern to transaction operations (gh-11382)', async function() {
+    db.deleteModel(/Test/);
+    const Test = db.model('Test', Schema({ status: String }, { writeConcern: { w: 'majority' } }));
+
+    await Test.createCollection();
+    await Test.deleteMany({});
+
+    const session = await db.startSession();
+
+    await session.withTransaction(async function() {
+      await Test.findOneAndUpdate({}, { name: 'test' }, { session });
+    });
+
+    await session.endSession();
+  });
+
+  it('allows custom transaction wrappers to store and reset document state with $createModifiedPathsSnapshot (gh-14268)', async function() {
+    db.deleteModel(/Test/);
+    const Test = db.model('Test', Schema({ name: String }, { writeConcern: { w: 'majority' } }));
+
+    await Test.createCollection();
+    await Test.deleteMany({});
+
+    const { _id } = await Test.create({ name: 'foo' });
+    const doc = await Test.findById(_id);
+    doc.name = 'bar';
+    for (let i = 0; i < 2; ++i) {
       const session = await db.startSession();
-      await session.withTransaction(async () => {
-        const test = await Test.create([{}], { session }).then(res => res[0]);
-        await test.save(); // throws DocumentNotFoundError
-      });
+      const snapshot = doc.$createModifiedPathsSnapshot();
+      session.startTransaction();
+
+      await doc.save({ session });
+      if (i === 0) {
+        await session.abortTransaction();
+        doc.$restoreModifiedPathsSnapshot(snapshot);
+      } else {
+        await session.commitTransaction();
+      }
       await session.endSession();
+    }
+
+    const { name } = await Test.findById(_id);
+    assert.strictEqual(name, 'bar');
+  });
+
+  it('throws error if using `create()` with multiple docs in a transaction (gh-15091)', async function() {
+    const BookingSchema = new Schema({
+      user: mongoose.Types.ObjectId,
+      slot: mongoose.Types.ObjectId,
+      bookingFor: String,
+      moreInfo: String
+    });
+
+    // Create models
+    db.deleteModel(/Test/);
+    const Booking = db.model('Test', BookingSchema);
+
+    // Define a sample payload
+    const user = { userId: new mongoose.Types.ObjectId() };
+    const payload = {
+      slotId: new mongoose.Types.ObjectId(),
+      data: [
+        { bookingFor: 'Person A', moreInfo: 'Some info' },
+        { bookingFor: 'Person B', moreInfo: 'Other info' }
+      ]
+    };
+
+    const session = await db.startSession();
+    session.startTransaction();
+
+    const bookingData = payload.data.map((obj) => ({
+      user: user.userId,
+      slot: payload.slotId,
+      bookingFor: obj.bookingFor,
+      moreInfo: obj.moreInfo
+    }));
+
+    const bookings = await Booking.create(bookingData, { session, ordered: true });
+    assert.equal(bookings.length, 2);
+
+    await assert.rejects(
+      Booking.create(bookingData, { session }),
+      /Cannot call `create\(\)` with a session and multiple documents unless `ordered: true` is set/
+    );
+
+    await session.abortTransaction();
+    await session.endSession();
   });
 });

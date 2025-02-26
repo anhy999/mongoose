@@ -262,4 +262,91 @@ describe('castArrayFilters', function() {
       castArrayFilters(q);
     }, /Could not find path "arr\.0\.notInSchema" in schema/);
   });
+
+  it('handles embedded discriminators (gh-12565)', function() {
+    const elementSchema = new Schema(
+      { elementType: String },
+      { discriminatorKey: 'elementType' }
+    );
+    const versionSchema = new Schema(
+      { version: Number, elements: [elementSchema] },
+      { strictQuery: 'throw' }
+    );
+    versionSchema.path('elements').discriminator(
+      'Graph',
+      new Schema({
+        number: Number,
+        curves: [{ line: { label: String, type: String, number: String, latLong: [Number], controller: String } }]
+      })
+    );
+
+    const testSchema = new Schema({ versions: [versionSchema] });
+
+    const q = new Query();
+    q.schema = testSchema;
+
+    const p = {
+      $push: {
+        'versions.$[version].elements.$[element].curves': {
+          line: {
+            label: 'CC110_Ligne 02',
+            type: 'numerique',
+            number: '30',
+            latLong: [44, 8],
+            controller: 'CC110'
+          }
+        }
+      }
+    };
+    const opts = {
+      arrayFilters: [
+        {
+          'element.elementType': 'Graph',
+          'element.number': '1'
+        }
+      ]
+    };
+    q.updateOne({}, p, opts);
+    castArrayFilters(q);
+
+    assert.strictEqual(q.options.arrayFilters[0]['element.number'], 1);
+  });
+
+  it('correctly casts array of strings underneath doc array (gh-12565)', function() {
+    const userSchema = new Schema({
+      groups: [{
+        document: 'ObjectId',
+        tags: [String]
+      }]
+    });
+
+    const q = new Query();
+    q.schema = userSchema;
+
+    const groupId = new Types.ObjectId();
+    const filter = {
+      groups: {
+        $elemMatch: {
+          document: groupId,
+          tags: 'tag-to-update'
+        }
+      }
+    };
+    const update = {
+      $set: {
+        'groups.$[group].tags.$[tag]': 42
+      }
+    };
+    const opts = {
+      arrayFilters: [
+        { 'group.document': groupId },
+        { tag: { $eq: 'tag-to-update' } }
+      ]
+    };
+    q.updateOne(filter, update, opts);
+    castArrayFilters(q);
+    q._update = q._castUpdate(q._update, false);
+
+    assert.strictEqual(q.getUpdate().$set['groups.$[group].tags.$[tag]'], '42');
+  });
 });

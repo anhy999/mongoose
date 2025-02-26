@@ -8,7 +8,7 @@ const start = require('./common');
 
 const MongooseBuffer = require('../lib/types/buffer');
 const ObjectId = require('../lib/types/objectid');
-const StateMachine = require('../lib/statemachine');
+const StateMachine = require('../lib/stateMachine');
 const assert = require('assert');
 const utils = require('../lib/utils');
 
@@ -121,29 +121,6 @@ describe('utils', function() {
     });
   });
 
-  it('utils.options', function() {
-    const o = { a: 1, b: 2, c: 3, 0: 'zero1' };
-    const defaults = { b: 10, d: 20, 0: 'zero2' };
-    const result = utils.options(defaults, o);
-    assert.equal(result.a, 1);
-    assert.equal(result.b, 2);
-    assert.equal(result.c, 3);
-    assert.equal(result.d, 20);
-    assert.deepEqual(o.d, result.d);
-    assert.equal(result['0'], 'zero1');
-
-    const result2 = utils.options(defaults);
-    assert.equal(result2.b, 10);
-    assert.equal(result2.d, 20);
-    assert.equal(result2['0'], 'zero2');
-
-    // same properties/vals
-    assert.deepEqual(defaults, result2);
-
-    // same object
-    assert.notEqual(defaults, result2);
-  });
-
   it('deepEquals on ObjectIds', function() {
     const s = (new ObjectId()).toString();
 
@@ -227,45 +204,6 @@ describe('utils', function() {
     assert.ok(!utils.deepEqual(2, []));
   });
 
-  describe('clone', function() {
-    it('retains RegExp options gh-1355', function() {
-      const a = new RegExp('hello', 'igm');
-      assert.ok(a.global);
-      assert.ok(a.ignoreCase);
-      assert.ok(a.multiline);
-
-      const b = utils.clone(a);
-      assert.equal(b.source, a.source);
-      assert.equal(a.global, b.global);
-      assert.equal(a.ignoreCase, b.ignoreCase);
-      assert.equal(a.multiline, b.multiline);
-    });
-
-    it('clones objects created with Object.create(null)', function() {
-      const o = Object.create(null);
-      o.a = 0;
-      o.b = '0';
-      o.c = 1;
-      o.d = '1';
-
-      const out = utils.clone(o);
-      assert.strictEqual(0, out.a);
-      assert.strictEqual('0', out.b);
-      assert.strictEqual(1, out.c);
-      assert.strictEqual('1', out.d);
-      assert.equal(Object.keys(out).length, 4);
-    });
-
-    it('doesnt minimize empty objects in arrays to null (gh-7322)', function() {
-      const o = { arr: [{ a: 42 }, {}, {}] };
-
-      const out = utils.clone(o, { minimize: true });
-      assert.deepEqual(out.arr[0], { a: 42 });
-      assert.deepEqual(out.arr[1], {});
-      assert.deepEqual(out.arr[2], {});
-    });
-  });
-
   it('array.flatten', function() {
     const orig = [0, [1, 2, [3, 4, [5, [6]], 7], 8], 9];
     assert.deepEqual([0, 1, 2, 3, 4, 5, 6, 7, 8, 9], utils.array.flatten(orig));
@@ -342,20 +280,6 @@ describe('utils', function() {
 
       assert.ok(to.val instanceof Date);
     });
-
-    it('skips cloning types that have `toBSON()` if `bson` is set (gh-8299)', function() {
-      const o = {
-        toBSON() {
-          return 'toBSON';
-        },
-        valueOf() {
-          return 'valueOf()';
-        }
-      };
-
-      const out = utils.clone(o, { bson: true });
-      assert.deepEqual(out, o);
-    });
   });
   describe('errorToPOJO(...)', () => {
     it('converts an error to a POJO', () => {
@@ -398,6 +322,33 @@ describe('utils', function() {
       assert.equal(pojoError.message, 'Something bad happened.');
       assert.ok(pojoError.stack);
       assert.deepEqual(pojoError.metadata, { hello: 'world' });
+    });
+  });
+
+  describe('toCollectionName', function() {
+    it('returns the same name for system.profile', function() {
+      assert.equal(utils.toCollectionName('system.profile'), 'system.profile');
+    });
+
+    it('returns the same name for system.indexes', function() {
+      assert.equal(utils.toCollectionName('system.indexes'), 'system.indexes');
+    });
+
+    it('throws an error when name is not a string', function() {
+      assert.throws(() => {
+        utils.toCollectionName(123, () => {});
+      }, /Collection name must be a string/);
+    });
+
+    it('throws an error when name is an empty string', function() {
+      assert.throws(() => {
+        utils.toCollectionName('', () => {});
+      }, /Collection name cannot be empty/);
+    });
+
+    it('uses the pluralize function when provided', function() {
+      const pluralize = (name) => name + 's';
+      assert.equal(utils.toCollectionName('test', pluralize), 'tests');
     });
   });
 });

@@ -8,6 +8,15 @@ Object.values(mongoose.models).forEach(model => {
 
 mongoose.pluralize(null);
 
+mongoose.overwriteMiddlewareResult('foo');
+const schema = new mongoose.Schema({ name: String });
+schema.pre('save', function() {
+  return mongoose.skipMiddlewareFunction('foobar');
+});
+schema.post('save', function() {
+  return mongoose.overwriteMiddlewareResult('foobar');
+});
+
 function gh10746() {
   type A = string extends Function ? never : string;
 
@@ -30,7 +39,7 @@ function connectionStates() {
   m.STATES.connected;
   m.ConnectionStates.connected;
 
-  m.connect('mongodb://localhost:27017/test').then(() => {
+  m.connect('mongodb://127.0.0.1:27017/test').then(() => {
     console.log('Connected!');
   });
 
@@ -60,3 +69,5 @@ function setAsObject() {
 
   expectError(mongoose.set({ invalid: true }));
 }
+
+const x: { name: string } = mongoose.omitUndefined({ name: 'foo' });

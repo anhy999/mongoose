@@ -43,3 +43,23 @@ webpack.base.config.js
 .nyc-output
 
 *.tgz
+
+notes.md
+list.out
+
+# config files
+lgtm.yml
+.mocharc.yml
+.eslintrc.js
+.markdownlint-cli2.cjs
+tsconfig.json
+
+# scripts
+scripts/
+tools/
+
+*.0x
+valnotes.md
+
+coverage
+.nyc_output

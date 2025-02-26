@@ -1,6 +1,6 @@
 # Mongoose Virtuals
 
-In Mongoose, a virtual is a property that is **not** stored in MongoDB. 
+In Mongoose, a virtual is a property that is **not** stored in MongoDB.
 Virtuals are typically used for computed properties on documents.
 
 * [Your First Virtual](#your-first-virtual)
@@ -9,18 +9,19 @@ Virtuals are typically used for computed properties on documents.
 * [Virtuals with Lean](#virtuals-with-lean)
 * [Limitations](#limitations)
 * [Populate](#populate)
+* [Virtuals via schema options](#virtuals-via-schema-options)
 * [Further Reading](#further-reading)
 
 ## Your First Virtual
 
 Suppose you have a `User` model. Every user has an `email`, but you also
-want the email's domain. For example, the domain portion of 
+want the email's domain. For example, the domain portion of
 'test@gmail.com' is 'gmail.com'.
 
 Below is one way to implement the `domain` property using a virtual.
 You define virtuals on a schema using the [`Schema#virtual()` function](../api/schema.html#schema_Schema-virtual).
 
-```javascript
+```acquit
 [require:Virtuals.*basic]
 ```
 
@@ -39,7 +40,7 @@ create a virtual property `fullName` that lets you set both of
 these properties at once. The key detail is that, in virtual getters and
 setters, `this` refers to the document the virtual is attached to.
 
-```javascript
+```acquit
 [require:Virtuals.*fullName]
 ```
 
@@ -51,7 +52,7 @@ For example, if you pass a document to [Express'  `res.json()` function](http://
 To include virtuals in `res.json()`, you need to set the
 [`toJSON` schema option](../guide.html#toJSON) to `{ virtuals: true }`.
 
-```javascript
+```acquit
 [require:Virtuals.*toJSON]
 ```
 
@@ -71,7 +72,7 @@ Virtuals are properties on Mongoose documents. If you use the
 rather than full Mongoose documents. That means no virtuals if you use
 [`lean()`](../api/query.html#query_Query-lean).
 
-```javascript
+```acquit
 [require:Virtuals.*lean]
 ```
 
@@ -85,7 +86,7 @@ that decorates lean documents with virtuals.
 Mongoose virtuals are **not** stored in MongoDB, which means you can't query
 based on Mongoose virtuals.
 
-```javascript
+```acquit
 [require:Virtuals.*in query]
 ```
 
@@ -98,11 +99,25 @@ Mongoose also supports [populating virtuals](../populate.html). A populated
 virtual contains documents from another collection. To define a populated
 virtual, you need to specify:
 
-- The `ref` option, which tells Mongoose which model to populate documents from.
-- The `localField` and `foreignField` options. Mongoose will populate documents from the model in `ref` whose `foreignField` matches this document's `localField`.
+* The `ref` option, which tells Mongoose which model to populate documents from.
+* The `localField` and `foreignField` options. Mongoose will populate documents from the model in `ref` whose `foreignField` matches this document's `localField`.
 
-```javascript
+```acquit
 [require:Virtuals.*populate]
+```
+
+## Virtuals via schema options
+
+Virtuals can also be defined in the schema-options directly without having to use [`.virtual`](../api/schema.html#Schema.prototype.virtual):
+
+```acquit
+[require:Virtuals.*schema-options fullName]
+```
+
+The same also goes for virtual options, like virtual populate:
+
+```acquit
+[require:Virtuals.*schema-options populate]
 ```
 
 ## Further Reading

@@ -1,4 +1,4 @@
-## Subdocuments
+# Subdocuments
 
 Subdocuments are documents embedded in other documents. In Mongoose, this
 means you can nest schemas in other schemas. Mongoose has two
@@ -38,7 +38,7 @@ doc.child;
 ```
 
 <ul class="toc">
-  <li><a href="#what-is-a-subdocument-">What is a Subdocument?</a></li>
+  <li><a href="#what-is-a-subdocument">What is a Subdocument?</a></li>
   <li><a href="#subdocuments-versus-nested-paths">Subdocuments versus Nested Paths</a></li>
   <li><a href="#subdocument-defaults">Subdocument Defaults</a></li>
   <li><a href="#finding-a-subdocument">Finding a Subdocument</a></li>
@@ -48,7 +48,7 @@ doc.child;
   <li><a href="#altsyntaxarrays">Alternate declaration syntax for arrays</a></li>
 </ul>
 
-### What is a Subdocument?
+## What is a Subdocument?
 
 Subdocuments are similar to normal documents. Nested schemas can have
 [middleware](middleware.html), [custom validation logic](validation.html),
@@ -59,13 +59,13 @@ document is saved.
 
 ```javascript
 const Parent = mongoose.model('Parent', parentSchema);
-const parent = new Parent({ children: [{ name: 'Matt' }, { name: 'Sarah' }] })
+const parent = new Parent({ children: [{ name: 'Matt' }, { name: 'Sarah' }] });
 parent.children[0].name = 'Matthew';
 
 // `parent.children[0].save()` is a no-op, it triggers middleware but
 // does **not** actually save the subdocument. You need to save the parent
 // doc.
-parent.save(callback);
+await parent.save();
 ```
 
 Subdocuments have `save` and `validate` [middleware](middleware.html)
@@ -74,7 +74,7 @@ the `save()` middleware for all its subdocuments, and the same for `validate()`
 middleware.
 
 ```javascript
-childSchema.pre('save', function (next) {
+childSchema.pre('save', function(next) {
   if ('invalid' == this.name) {
     return next(new Error('#sadpanda'));
   }
@@ -82,9 +82,11 @@ childSchema.pre('save', function (next) {
 });
 
 const parent = new Parent({ children: [{ name: 'invalid' }] });
-parent.save(function (err) {
-  console.log(err.message) // #sadpanda
-});
+try {
+  await parent.save();
+} catch (err) {
+  err.message; // '#sadpanda'
+}
 ```
 
 Subdocuments' `pre('save')` and `pre('validate')` middleware execute
@@ -121,7 +123,7 @@ parentSchema.pre('save', function(next) {
 });
 ```
 
-### Subdocuments versus Nested Paths
+## Subdocuments versus Nested Paths
 
 In Mongoose, nested paths are subtly different from subdocuments.
 For example, below are two schemas: one with `child` as a subdocument,
@@ -160,7 +162,7 @@ console.log(doc2.child); // Prints 'MongooseDocument { undefined }'
 doc2.child.name = 'test'; // Works
 ```
 
-### Subdocument Defaults
+## Subdocument Defaults
 
 Subdocument paths are undefined by default, and Mongoose does
 not apply subdocument defaults unless you set the subdocument
@@ -220,23 +222,20 @@ const doc = new Subdoc();
 doc.child; // { age: 0 }
 ```
 
-### Finding a Subdocument
+## Finding a Subdocument
 
 Each subdocument has an `_id` by default. Mongoose document arrays have a
-special [id](api.html#types_documentarray_MongooseDocumentArray-id) method
+special [id](api/mongoosedocumentarray.html#mongoosedocumentarray_MongooseDocumentArray-id) method
 for searching a document array to find a document with a given `_id`.
 
 ```javascript
 const doc = parent.children.id(_id);
 ```
 
-### Adding Subdocs to Arrays
+## Adding Subdocs to Arrays
 
-MongooseArray methods such as
-[push](api.html#mongoosearray_MongooseArray-push),
-[unshift](api.html#mongoosearray_MongooseArray-unshift),
-[addToSet](api.html#mongoosearray_MongooseArray-addToSet),
-and others cast arguments to their proper types transparently:
+MongooseArray methods such as `push`, `unshift`, `addToSet`, and others cast arguments to their proper types transparently:
+
 ```javascript
 const Parent = mongoose.model('Parent');
 const parent = new Parent();
@@ -244,13 +243,11 @@ const parent = new Parent();
 // create a comment
 parent.children.push({ name: 'Liesl' });
 const subdoc = parent.children[0];
-console.log(subdoc) // { _id: '501d86090d371bab2c0341c5', name: 'Liesl' }
+console.log(subdoc); // { _id: '501d86090d371bab2c0341c5', name: 'Liesl' }
 subdoc.isNew; // true
 
-parent.save(function (err) {
-  if (err) return handleError(err)
-  console.log('Success!');
-});
+await parent.save();
+console.log('Success!');
 ```
 
 You can also create a subdocument without adding it to an array by using the [`create()` method](api/mongoosedocumentarray.html#mongoosedocumentarray_MongooseDocumentArray-create) of Document Arrays.
@@ -259,26 +256,23 @@ You can also create a subdocument without adding it to an array by using the [`c
 const newdoc = parent.children.create({ name: 'Aaron' });
 ```
 
-### Removing Subdocs
+## Removing Subdocs
 
-Each subdocument has its own
-[remove](api.html#types_embedded_EmbeddedDocument-remove) method. For
-an array subdocument, this is equivalent to calling `.pull()` on the
-subdocument. For a single nested subdocument, `remove()` is equivalent
-to setting the subdocument to `null`.
+Each subdocument has its own [deleteOne](api/subdocument.html#Subdocument.prototype.deleteOne()) method.
+For an array subdocument, this is equivalent to calling `.pull()` on the subdocument.
+For a single nested subdocument, `deleteOne()` is equivalent to setting the subdocument to [`null`](https://masteringjs.io/tutorials/fundamentals/null).
 
 ```javascript
 // Equivalent to `parent.children.pull(_id)`
-parent.children.id(_id).remove();
+parent.children.id(_id).deleteOne();
 // Equivalent to `parent.child = null`
-parent.child.remove();
-parent.save(function (err) {
-  if (err) return handleError(err);
-  console.log('the subdocs were removed');
-});
+parent.child.deleteOne();
+
+await parent.save();
+console.log('the subdocs were removed');
 ```
 
-<h3 id="subdoc-parents">Parents of Subdocs</h3>
+## Parents of Subdocs {#subdoc-parents}
 
 Sometimes, you need to get the parent of a subdoc. You can access the
 parent using the `parent()` function.
@@ -319,10 +313,9 @@ doc.level1.level2.parent() === doc.level1; // true
 doc.level1.level2.ownerDocument() === doc; // true
 ```
 
-<h4 id="altsyntaxarrays"><a href="#altsyntaxarrays">Alternate declaration syntax for arrays</a></h4>
+### Alternate declaration syntax for arrays {#altsyntaxarrays}
 
-If you create a schema with an array of objects, Mongoose will automatically
-convert the object to a schema for you:
+If you create a schema with an array of objects, Mongoose will automatically convert the object to a schema for you:
 
 ```javascript
 const parentSchema = new Schema({
