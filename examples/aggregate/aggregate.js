@@ -51,7 +51,7 @@ const data = [
 ];
 
 
-mongoose.connect('mongodb://localhost/persons', function(err) {
+mongoose.connect('mongodb://127.0.0.1/persons', function(err) {
   if (err) throw err;
 
   // create all of the dummy people
@@ -64,7 +64,7 @@ mongoose.connect('mongodb://localhost/persons', function(err) {
 
     // run an aggregate query that will get all of the people who like a given
     // item. To see the full documentation on ways to use the aggregate
-    // framework, see http://docs.mongodb.org/manual/core/aggregation/
+    // framework, see http://www.mongodb.com/docs/manual/core/aggregation/
     Person.aggregate(
       // select the fields we want to deal with
       { $project: { name: 1, likes: 1 } },

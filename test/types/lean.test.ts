@@ -1,59 +1,5 @@
-import { Schema, model, Document, LeanDocument, Types, BaseDocumentType, DocTypeFromUnion, DocTypeFromGeneric } from 'mongoose';
-import { expectError, expectNotType, expectType } from 'tsd';
-
-const schema: Schema = new Schema({ name: { type: 'String' } });
-
-class Subdoc extends Document {
-  name: string;
-}
-
-interface ITestBase {
-  _id?: number;
-  name?: string;
-  mixed?: any;
-}
-
-interface ITest extends ITestBase, Document<number> {
-  subdoc?: Subdoc;
-  testMethod: () => number;
-  id: string;
-}
-
-schema.method('testMethod', () => 42);
-
-const Test = model<ITest>('Test', schema);
-
-void async function main() {
-  const doc = await Test.findOne().orFail();
-
-  doc.subdoc = new Subdoc({ name: 'test' });
-  doc.id = 'Hello';
-
-  doc.testMethod();
-
-  // Because ITest extends Document there is no good way for toObject
-  // to infer the type which doesn't add a high probability of a circular
-  // reference, so it must be specified here or else ITest above could be changed
-  // to `extends Document<number, {}, ITestBase>`
-  const pojo = doc.toObject<ITestBase>();
-  expectError(await pojo.save());
-
-  const _doc: ITestBase = await Test.findOne().orFail().lean();
-  expectError(await _doc.save());
-
-  expectError(_doc.testMethod());
-  _doc.name = 'test';
-  _doc.mixed = 42;
-  console.log(_doc._id);
-
-  const hydrated = Test.hydrate(_doc);
-  await hydrated.save();
-
-  const _docs: LeanDocument<ITest>[] = await Test.find().lean();
-  _docs[0].mixed = 42;
-
-  const _doc2: ITestBase = await Test.findOne().lean<ITestBase>();
-}();
+import { Schema, model, Types, InferSchemaType, FlattenMaps, HydratedDocument, Model, Document, PopulatedDoc } from 'mongoose';
+import { expectAssignable, expectError, expectType } from 'tsd';
 
 function gh10345() {
   (function() {
@@ -135,65 +81,10 @@ async function gh11118(): Promise<void> {
   }
 }
 
-async function getBaseDocumentType(): Promise<void> {
-  interface User {
-    name: string;
-    email: string;
-    avatar?: string;
-  }
-
-  type UserDocUnion = User & Document<Types.ObjectId>;
-  type UserDocGeneric = Document<Types.ObjectId, {}, User>;
-
-  // DocTypeFromUnion should correctly infer the User type from our unioned type
-  type fromUnion1 = DocTypeFromUnion<UserDocUnion>;
-  expectType<User>({} as fromUnion1);
-  // DocTypeFromUnion should give a "false" type if it isn't a unioned type
-  type fromUnion2 = DocTypeFromUnion<UserDocGeneric>;
-  expectType<false>({} as fromUnion2);
-  // DocTypeFromUnion should give a "false" type of it's an any
-  expectType<false>({} as DocTypeFromUnion<any>);
-
-  // DocTypeFromGeneric should correctly infer the User type from our Generic constructed type
-  type fromGeneric1 = DocTypeFromGeneric<UserDocGeneric>;
-  expectType<User>({} as fromGeneric1);
-  // DocTypeFromGeneric should give a "false" type if it's not a type made with Document<?, ?, DocType>
-  type fromGeneric2 = DocTypeFromGeneric<UserDocUnion>;
-  expectType<false>({} as fromGeneric2);
-  // DocTypeFromGeneric should give a "false" type of it's an any
-  expectType<false>({} as DocTypeFromGeneric<any>);
-
-  type baseDocFromUnion = BaseDocumentType<UserDocUnion>;
-  expectType<User>({} as baseDocFromUnion);
-
-  type baseDocFromGeneric = BaseDocumentType<UserDocGeneric>;
-  expectType<User>({} as baseDocFromGeneric);
-}
-
-async function getBaseDocumentTypeFromModel(): Promise<void> {
-  interface User {
-    name: string;
-    email: string;
-    avatar?: string;
-  }
-  const schema = new Schema<User>({});
-  const Model = model('UserBaseDocTypeFromModel', schema);
-  type UserDocType = InstanceType<typeof Model>;
-
-  type baseFromUserDocType = BaseDocumentType<UserDocType>;
-
-  expectType<User & { _id: Types.ObjectId }>({} as baseFromUserDocType);
-
-  const a: UserDocType = {} as any;
-
-  const b = a.toJSON();
-}
-
-
 async function _11767() {
   interface Question {
     text: string;
-    answers: Types.Array<string>;
+    answers: string[];
     correct: number;
   }
   const QuestionSchema = new Schema<Question>({
@@ -204,7 +95,7 @@ async function _11767() {
   interface Exam {
     element: string;
     dateTaken: Date;
-    questions: Types.DocumentArray<Question>;
+    questions: Question[];
   }
   const ExamSchema = new Schema<Exam>({
     element: String,
@@ -233,4 +124,228 @@ async function _11767() {
   // expectError(examFound2Obj.questions.$pop);
   // expectError(examFound2Obj.questions[0].populated);
   expectType<string[]>(examFound2Obj.questions[0].answers);
+}
+
+async function gh13010() {
+  const schema = new Schema({
+    name: { required: true, type: Map, of: String }
+  });
+
+  const CountryModel = model('Country', schema);
+
+  await CountryModel.create({
+    name: {
+      en: 'Croatia',
+      ru: 'Хорватия'
+    }
+  });
+
+  const country = await CountryModel.findOne().lean().orFail().exec();
+  expectType<Record<string, string>>(country.name);
+}
+
+async function gh13345_1() {
+  const imageSchema = new Schema({
+    url: { required: true, type: String }
+  });
+
+  const placeSchema = new Schema({
+    images: { required: true, type: [imageSchema] }
+  });
+
+  type Place = InferSchemaType<typeof placeSchema>;
+
+  const PlaceModel = model('Place', placeSchema);
+
+  const place = await PlaceModel.findOne().lean().orFail().exec();
+  expectAssignable<Place>(place);
+}
+
+async function gh13345_2() {
+  const imageSchema = new Schema({
+    description: { required: true, type: Map, of: String },
+    url: { required: true, type: String }
+  });
+
+  const placeSchema = new Schema({
+    images: { required: true, type: [imageSchema] }
+  });
+
+  type Place = InferSchemaType<typeof placeSchema>;
+
+  const PlaceModel = model('Place', placeSchema);
+
+  const place = await PlaceModel.findOne().lean().orFail().exec();
+  expectAssignable<FlattenMaps<Place>>(place);
+  expectType<Record<string, string>>(place.images[0].description);
+}
+
+async function gh13345_3() {
+  const imageSchema = new Schema({
+    url: { required: true, type: String }
+  });
+
+  const placeSchema = new Schema({
+    images: { type: [imageSchema], default: undefined }
+  });
+
+  type Place = InferSchemaType<typeof placeSchema>;
+
+  const PlaceModel = model('Place', placeSchema);
+
+  const place = await PlaceModel.findOne().lean().orFail().exec();
+  expectAssignable<Place>(place);
+}
+
+async function gh13382() {
+  const schema = new Schema({
+    name: String
+  });
+  const Test = model('Test', schema);
+
+  const res = await Test.updateOne({}, { name: 'bar' }).lean();
+  expectAssignable<{ matchedCount: number, modifiedCount: number }>(res);
+}
+
+async function gh15057() {
+  type Attachment =
+    | {
+        type: 'foo';
+        value?: undefined;
+      }
+    | {
+        type: 'string';
+        value?: string;
+      };
+
+  const TestSchema = new Schema<Attachment>({
+    type: { type: String, required: true },
+    value: { type: String }
+  });
+
+  const AttachmentModel = model<Attachment>('test', TestSchema);
+
+  const main = async() => {
+    const item = await AttachmentModel.findOne().lean();
+
+    if (!item) return;
+
+    doSomeThing(item);
+  };
+
+  const doSomeThing = (item: Attachment) => {
+    console.log(item);
+  };
+}
+
+async function gh15122() {
+  interface IChild {
+    _id: Types.ObjectId;
+    name: string;
+  }
+
+  type ChildDocumentOverrides = {};
+
+  interface IChildVirtuals {
+    id: string;
+  }
+
+  type ChildInstance = HydratedDocument<
+    IChild,
+    ChildDocumentOverrides & IChildVirtuals
+  >;
+
+  type ChildModelType = Model<
+    IChild,
+    {},
+    ChildDocumentOverrides,
+    IChildVirtuals,
+    ChildInstance
+  >;
+
+
+  interface IParent {
+    _id: Types.ObjectId;
+    name: string;
+    surname: string;
+    child: PopulatedDoc<Document<Types.ObjectId> & IChild>;
+  }
+
+  type ParentDocumentOverrides = {};
+
+  interface IParentVirtuals {
+    id: string;
+    fullName: string;
+  }
+
+  type ParentInstance = HydratedDocument<
+    IParent,
+    ParentDocumentOverrides & IParentVirtuals
+  >;
+
+  type ParentModelType = Model<
+    IParent,
+    {},
+    ParentDocumentOverrides,
+    IParentVirtuals,
+    ParentInstance
+  >;
+
+  const parentSchema = new Schema<IParent, ParentModelType>(
+    {
+      name: {
+        type: String,
+        required: true,
+        trim: true
+      },
+      surname: {
+        type: String,
+        required: true,
+        trim: true
+      },
+      child: {
+        type: 'ObjectId',
+        ref: 'Child',
+        required: true
+      }
+    }
+  );
+
+  parentSchema.virtual('fullName').get(function() {
+    return `${this.name} ${this.surname}`;
+  });
+
+  const Parent = model<IParent, ParentModelType>('Parent', parentSchema);
+
+  const testFn = (parent: IParent) => {};
+  const parentDoc = await Parent.findOne().lean();
+  if (parentDoc) {
+    testFn(parentDoc);
+  }
+}
+
+async function gh15158() {
+  type FooBar = {
+    value: string;
+  };
+
+  const createSomeModelAndDoSomething = async <T extends FooBar>() => {
+    const TestSchema = new Schema<T>({
+      value: { type: String }
+    });
+
+    const FooBarModel = model<T>('test', TestSchema);
+
+    const item = await FooBarModel.findOne().lean();
+
+    if (!item) return;
+
+    doSomeThing(item);
+  };
+
+  const doSomeThing = <T extends FooBar>(item: T) => {
+    console.log(item);
+  };
+
+  createSomeModelAndDoSomething();
 }

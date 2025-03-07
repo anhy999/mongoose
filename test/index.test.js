@@ -7,7 +7,6 @@ const start = require('./common');
 const assert = require('assert');
 const random = require('./util').random;
 const stream = require('stream');
-const { EventEmitter } = require('events');
 
 const collection = 'blogposts_' + random();
 
@@ -88,6 +87,20 @@ describe('mongoose module:', function() {
     await User.findOne();
     assert.equal(written.length, 1);
     assert.ok(written[0].startsWith('users.findOne('));
+    await mongoose.disconnect();
+  });
+
+  it('should collect the args correctly gh-13364', async function() {
+    const util = require('util');
+    const mongoose = new Mongoose();
+    const conn = await mongoose.connect(start.uri);
+    let actual = '';
+    mongoose.set('debug', (collectionName, methodName, ...methodArgs) => {
+      actual = `${collectionName}.${methodName}(${util.inspect(methodArgs).slice(2, -2)})`;
+    });
+    const user = conn.connection.collection('User');
+    await user.findOne({ key: 'value' });
+    assert.equal('User.findOne({ key: \'value\' })', actual);
   });
 
   it('{g,s}etting options', function() {
@@ -202,7 +215,7 @@ describe('mongoose module:', function() {
 
     mongoose.set('toJSON', { virtuals: true });
 
-    const schema = new Schema({});
+    const schema = new mongoose.Schema({});
     schema.virtual('foo').get(() => 42);
     const M = mongoose.model('Test', schema);
 
@@ -212,7 +225,7 @@ describe('mongoose module:', function() {
 
     assert.equal(doc.toJSON({ virtuals: false }).foo, void 0);
 
-    const schema2 = new Schema({}, { toJSON: { virtuals: true } });
+    const schema2 = new mongoose.Schema({}, { toJSON: { virtuals: true } });
     schema2.virtual('foo').get(() => 'bar');
     const M2 = mongoose.model('Test2', schema2);
 
@@ -226,7 +239,7 @@ describe('mongoose module:', function() {
 
     mongoose.set('toObject', { virtuals: true });
 
-    const schema = new Schema({});
+    const schema = new mongoose.Schema({});
     schema.virtual('foo').get(() => 42);
     const M = mongoose.model('Test', schema);
 
@@ -416,6 +429,25 @@ describe('mongoose module:', function() {
     return Promise.resolve();
   });
 
+  it('global plugins with applyPluginsToChildSchemas (gh-13887)', function() {
+    const m = new Mongoose();
+    m.set('applyPluginsToChildSchemas', false);
+
+    const called = [];
+    m.plugin(function(s) {
+      called.push(s);
+    });
+
+    const schema = new m.Schema({
+      subdoc: new m.Schema({ name: String }),
+      arr: [new m.Schema({ name: String })]
+    });
+
+    m.model('Test', schema);
+    assert.equal(called.length, 1);
+    assert.ok(called.indexOf(schema) !== -1);
+  });
+
   it('global plugins recompile schemas (gh-7572)', function() {
     function helloPlugin(schema) {
       schema.virtual('greeting').get(() => 'hello');
@@ -453,7 +485,7 @@ describe('mongoose module:', function() {
 
     const M = mongoose.model('gh6760', schema);
 
-    const doc = new M({ testId: 'length12str0', testNum: 123, mixed: {} });
+    const doc = new M({ testId: '0'.repeat(24), testNum: 123, mixed: {} });
 
     assert.ok(doc.testId instanceof mongoose.Types.ObjectId);
     assert.ok(doc.testNum instanceof mongoose.Types.Decimal128);
@@ -479,6 +511,7 @@ describe('mongoose module:', function() {
 
     assert.equal(doc.createdAt.valueOf(), date.valueOf());
     assert.equal(doc.updatedAt.valueOf(), date.valueOf());
+    await mongoose.disconnect();
   });
 
   it('isolates custom types between mongoose instances (gh-6933) (gh-7158)', function() {
@@ -569,9 +602,7 @@ describe('mongoose module:', function() {
       mong.connect(start.uri, options);
 
       mong.connection.on('open', function() {
-        mong.disconnect(function() {
-          done();
-        });
+        mong.disconnect().then(() => done()).catch(err => done(err));
       });
     });
 
@@ -727,7 +758,7 @@ describe('mongoose module:', function() {
   });
 
   it('isValidObjectId (gh-3823)', function() {
-    assert.ok(mongoose.isValidObjectId('0123456789ab'));
+    assert.ok(!mongoose.isValidObjectId('0123456789ab'));
     assert.ok(mongoose.isValidObjectId('5f5c2d56f6e911019ec2acdc'));
     assert.ok(mongoose.isValidObjectId('608DE01F32B6A93BBA314159'));
     assert.ok(mongoose.isValidObjectId(new mongoose.Types.ObjectId()));
@@ -758,6 +789,7 @@ describe('mongoose module:', function() {
     await Person.create({ name: 'Test1', favoriteMovie: movie._id });
     const entry = await Person.findOne().populate({ path: 'favoriteMovie' });
     assert(entry);
+    await mongoose.disconnect();
   });
   it('global `strictPopulate` works when true (gh-10694)', async function() {
     const mongoose = new Mongoose();
@@ -774,6 +806,7 @@ describe('mongoose module:', function() {
     await assert.rejects(async() => {
       await Person.findOne().populate({ path: 'favoriteGame' });
     }, { message: 'Cannot populate path `favoriteGame` because it is not in your schema. Set the `strictPopulate` option to false to override.' });
+    await mongoose.disconnect();
   });
   it('allows global `strictPopulate` to be overriden on specific queries set to true (gh-10694)', async function() {
     const mongoose = new Mongoose();
@@ -789,6 +822,7 @@ describe('mongoose module:', function() {
     await assert.rejects(async() => {
       await Person.findOne().populate({ path: 'favoriteGame', strictPopulate: true });
     }, { message: 'Cannot populate path `favoriteGame` because it is not in your schema. Set the `strictPopulate` option to false to override.' });
+    await mongoose.disconnect();
   });
   it('allows global `strictPopulate` to be overriden on specific queries set to false (gh-10694)', async function() {
     const mongoose = new Mongoose();
@@ -803,6 +837,7 @@ describe('mongoose module:', function() {
     await Person.create({ name: 'Test1', favoriteMovie: movie._id });
     const entry = await Person.findOne().populate({ path: 'favoriteMovie' });
     assert(entry);
+    await mongoose.disconnect();
   });
 
   describe('exports', function() {
@@ -815,7 +850,6 @@ describe('mongoose module:', function() {
       assert.ok(mongoose.Schema.Types);
       assert.equal(typeof mongoose.SchemaType, 'function');
       assert.equal(typeof mongoose.Query, 'function');
-      assert.equal(typeof mongoose.Promise, 'function');
       assert.equal(typeof mongoose.Model, 'function');
       assert.equal(typeof mongoose.Document, 'function');
       assert.equal(typeof mongoose.Error, 'function');
@@ -871,6 +905,7 @@ describe('mongoose module:', function() {
       // lean is necessary to avoid defaults by casting
       const movie = await Movie.findOne({ title: 'Cloud Atlas' }).lean();
       assert.equal(movie.genre, 'Action');
+      await m.disconnect();
     });
 
     it('setting `setDefaultOnInsert` on operation has priority over base option (gh-9032)', async function() {
@@ -896,6 +931,7 @@ describe('mongoose module:', function() {
       // lean is necessary to avoid defaults by casting
       const movie = await Movie.findOne({ title: 'The Man From Earth' }).lean();
       assert.ok(!movie.genre);
+      await m.disconnect();
     });
     it('should prevent non-hexadecimal strings (gh-9996)', function() {
       const badIdString = 'z'.repeat(24);
@@ -903,7 +939,7 @@ describe('mongoose module:', function() {
       const goodIdString = '1'.repeat(24);
       assert.deepStrictEqual(mongoose.isValidObjectId(goodIdString), true);
       const goodIdString2 = '1'.repeat(12);
-      assert.deepStrictEqual(mongoose.isValidObjectId(goodIdString2), true);
+      assert.deepStrictEqual(mongoose.isValidObjectId(goodIdString2), false);
     });
     it('Allows a syncIndexes shorthand mongoose.syncIndexes (gh-10893)', async function() {
       const m = new mongoose.Mongoose();
@@ -970,6 +1006,7 @@ describe('mongoose module:', function() {
         // Assert
         const optionsSentToMongo = nativeAggregateSpy.args[0][1];
         assert.strictEqual(optionsSentToMongo.allowDiskUse, undefined);
+        await m.disconnect();
       });
 
       it('works when set to `true` and no option provided', async() => {
@@ -992,6 +1029,7 @@ describe('mongoose module:', function() {
         // Assert
         const optionsSentToMongo = nativeAggregateSpy.args[0][1];
         assert.strictEqual(optionsSentToMongo.allowDiskUse, true);
+        await m.disconnect();
       });
       it('can be overridden by a specific query', async() => {
         // Arrange
@@ -1013,6 +1051,7 @@ describe('mongoose module:', function() {
         // Assert
         const optionsSentToMongo = nativeAggregateSpy.args[0][1];
         assert.equal(optionsSentToMongo.allowDiskUse, false);
+        await m.disconnect();
       });
     });
     describe('global `timestamps.createdAt.immutable` (gh-10139)', () => {
@@ -1041,46 +1080,6 @@ describe('mongoose module:', function() {
     });
   });
 
-  describe('custom drivers', function() {
-    it('can set custom driver (gh-11900)', async function() {
-      const m = new mongoose.Mongoose();
-
-      class Collection {
-        findOne(filter, options, cb) {
-          cb(null, { answer: 42 });
-        }
-      }
-      class Connection extends EventEmitter {
-        constructor(base) {
-          super();
-          this.base = base;
-          this.models = {};
-        }
-
-        collection() {
-          return new Collection();
-        }
-
-        openUri(uri, opts, callback) {
-          this.readyState = mongoose.ConnectionStates.connected;
-          callback();
-        }
-      }
-      const driver = {
-        Collection,
-        getConnection: () => Connection
-      };
-
-      m.setDriver(driver);
-
-      await m.connect();
-
-      const Test = m.model('Test', m.Schema({ answer: Number }));
-
-      const res = await Test.findOne();
-      assert.deepEqual(res.toObject(), { answer: 42 });
-    });
-  });
   describe('global id option', function() {
     it('can disable the id virtual on schemas gh-11966', async function() {
       const m = new mongoose.Mongoose();
@@ -1097,6 +1096,7 @@ describe('mongoose module:', function() {
         title: 'The IDless master'
       });
       assert.equal(entry.id, undefined);
+      await m.disconnect();
     });
   });
 
@@ -1178,6 +1178,54 @@ describe('mongoose module:', function() {
         assert.ok(err.errors['invalid'] instanceof SetOptionError.SetOptionInnerError);
         assert.strictEqual(err.message, 'invalid: "invalid" is not a valid option to set');
       }
+    });
+  });
+
+  describe('createInitialConnection (gh-8302)', function() {
+    let m;
+
+    beforeEach(function() {
+      m = new mongoose.Mongoose();
+    });
+
+    afterEach(async function() {
+      await m.disconnect();
+    });
+
+    it('should delete existing connection when setting createInitialConnection to false', function() {
+      assert.ok(m.connection);
+      m.set('createInitialConnection', false);
+      assert.strictEqual(m.connection, undefined);
+    });
+
+    it('should create connection when createConnection is called', function() {
+      m.set('createInitialConnection', false);
+      const conn = m.createConnection();
+      assert.equal(conn, m.connection);
+    });
+
+    it('should create a new connection automatically when connect() is called if no existing default connection', async function() {
+      assert.ok(m.connection);
+      m.set('createInitialConnection', false);
+      assert.strictEqual(m.connection, undefined);
+
+      await m.connect(start.uri);
+      assert.ok(m.connection);
+    });
+
+    it('should not delete default connection if it has models', async function() {
+      assert.ok(m.connection);
+      m.model('Test', new m.Schema({ name: String }));
+      m.set('createInitialConnection', false);
+      assert.ok(m.connection);
+    });
+
+    it('should not delete default connection if it is connected', async function() {
+      assert.ok(m.connection);
+      await m.connect(start.uri);
+      m.set('createInitialConnection', false);
+      assert.ok(m.connection);
+      assert.equal(m.connection.readyState, 1);
     });
   });
 });

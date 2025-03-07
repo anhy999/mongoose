@@ -1,6 +1,7 @@
 import { Schema, model, Document, Model, Types } from 'mongoose';
+import { expectType } from 'tsd';
 
-interface ITest extends Document {
+interface ITest {
   map1: Map<string, number>,
   map2: Map<string, string>,
   map3: Map<string, number>
@@ -67,7 +68,20 @@ function gh10575() {
 }
 
 function gh10872(): void {
-  const doc: ITest = new Test({});
+  const doc = new Test({});
 
   doc.toJSON().map1.foo;
+}
+
+function gh13755() {
+  const testSchema = new Schema({
+    instance: {
+      type: 'Map',
+      of: String
+    }
+  } as const);
+
+  const TestModel = model('Test', testSchema);
+  const doc = new TestModel();
+  expectType<Map<string, string> | undefined | null>(doc.instance);
 }

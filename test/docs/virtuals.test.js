@@ -4,7 +4,6 @@ const assert = require('assert');
 const start = require('../common');
 
 const mongoose = new start.mongoose.Mongoose();
-const Schema = mongoose.Schema;
 
 // This file is in `es-next` because it uses async/await for convenience
 
@@ -17,6 +16,10 @@ describe('Virtuals', function() {
     mongoose.deleteModel(/.*/);
   });
 
+  after(async() => {
+    await mongoose.disconnect();
+  });
+
   it('basic', async function() {
     const userSchema = mongoose.Schema({
       email: String
@@ -27,7 +30,7 @@ describe('Virtuals', function() {
     });
     const User = mongoose.model('User', userSchema);
 
-    let doc = await User.create({ email: 'test@gmail.com' });
+    const doc = await User.create({ email: 'test@gmail.com' });
     // `domain` is now a property on User documents.
     doc.domain; // 'gmail.com'
     // acquit:ignore:start
@@ -79,10 +82,10 @@ describe('Virtuals', function() {
     const User = mongoose.model('User', userSchema);
 
     const doc = new User({ _id: 1, email: 'test@gmail.com' });
-    
+
     doc.toJSON().domain; // 'gmail.com'
     // {"_id":1,"email":"test@gmail.com","domain":"gmail.com","id":"1"}
-    JSON.stringify(doc); 
+    JSON.stringify(doc);
 
     // To skip applying virtuals, pass `virtuals: false` to `toJSON()`
     doc.toJSON({ virtuals: false }).domain; // undefined
@@ -154,6 +157,78 @@ describe('Virtuals', function() {
       localField: 'authorId',
       foreignField: '_id',
       justOne: true
+    });
+    const User = mongoose.model('User', userSchema);
+    const BlogPost = mongoose.model('BlogPost', blogPostSchema);
+
+    // acquit:ignore:start
+    await BlogPost.deleteMany({});
+    await User.deleteMany({});
+    // acquit:ignore:end
+    await BlogPost.create({ title: 'Introduction to Mongoose', authorId: 1 });
+    await User.create({ _id: 1, email: 'test@gmail.com' });
+
+    const doc = await BlogPost.findOne().populate('author');
+    doc.author.email; // 'test@gmail.com'
+    // acquit:ignore:start
+    assert.equal(doc.author.email, 'test@gmail.com');
+    // acquit:ignore:end
+  });
+
+  it('schema-options fullName', function() {
+    const userSchema = mongoose.Schema({
+      firstName: String,
+      lastName: String
+    }, {
+      virtuals: {
+        // Create a virtual property `fullName` with a getter and setter
+        fullName: {
+          get() { return `${this.firstName} ${this.lastName}`; },
+          set(v) {
+            // `v` is the value being set, so use the value to set
+            // `firstName` and `lastName`.
+            const firstName = v.substring(0, v.indexOf(' '));
+            const lastName = v.substring(v.indexOf(' ') + 1);
+            this.set({ firstName, lastName });
+          }
+        }
+      }
+    });
+    const User = mongoose.model('User', userSchema);
+
+    const doc = new User();
+    // Vanilla JavaScript assignment triggers the setter
+    doc.fullName = 'Jean-Luc Picard';
+
+    doc.fullName; // 'Jean-Luc Picard'
+    doc.firstName; // 'Jean-Luc'
+    doc.lastName; // 'Picard'
+    // acquit:ignore:start
+    assert.equal(doc.fullName, 'Jean-Luc Picard');
+    assert.equal(doc.firstName, 'Jean-Luc');
+    assert.equal(doc.lastName, 'Picard');
+    // acquit:ignore:end
+  });
+
+  it('schema-options populate', async function() {
+    const userSchema = mongoose.Schema({ _id: Number, email: String });
+    const blogPostSchema = mongoose.Schema({
+      title: String,
+      authorId: Number
+    }, {
+      virtuals: {
+        // When you `populate()` the `author` virtual, Mongoose will find the
+        // first document in the User model whose `_id` matches this document's
+        // `authorId` property.
+        author: {
+          options: {
+            ref: 'User',
+            localField: 'authorId',
+            foreignField: '_id',
+            justOne: true
+          }
+        }
+      }
     });
     const User = mongoose.model('User', userSchema);
     const BlogPost = mongoose.model('BlogPost', blogPostSchema);

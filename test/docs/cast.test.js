@@ -23,6 +23,10 @@ describe('Cast Tutorial', function() {
     });
   });
 
+  after(async() => {
+    await mongoose.disconnect();
+  });
+
   it('get and set', async function() {
     const query = Character.find({ name: 'Jean-Luc Picard' });
     query.getFilter(); // `{ name: 'Jean-Luc Picard' }`
@@ -130,6 +134,26 @@ describe('Cast Tutorial', function() {
     assert.equal(err.name, 'StrictModeError');
     assert.equal(err.message, 'Path "notInSchema" is not in schema and ' +
       'strictQuery is \'throw\'.');
+    // acquit:ignore:end
+  });
+
+  it('strictQuery removes casted empty objects', async function() {
+    mongoose.deleteModel('Character');
+    const schema = new mongoose.Schema({ name: String, age: Number }, {
+      strictQuery: true
+    });
+    Character = mongoose.model('Character', schema);
+
+    const query = Character.findOne({
+      $or: [{ notInSchema: { $lt: 'not a number' } }],
+      $and: [{ name: 'abc' }, { age: { $gt: 18 } }, { notInSchema: { $lt: 'not a number' } }],
+      $nor: [{}] // should be kept
+    });
+
+    await query.exec();
+    query.getFilter(); // Empty object `{}`, Mongoose removes `notInSchema`
+    // acquit:ignore:start
+    assert.deepEqual(query.getFilter(), { $and: [{ name: 'abc' }, { age: { $gt: 18 } }], $nor: [{}] });
     // acquit:ignore:end
   });
 

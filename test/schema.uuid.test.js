@@ -3,12 +3,14 @@
 const start = require('./common');
 const util = require('./util');
 
-const bson = require('bson');
-
 const assert = require('assert');
+const bson = require('bson');
+const { randomUUID } = require('crypto');
 
 const mongoose = start.mongoose;
 const Schema = mongoose.Schema;
+
+const { v4: uuidv4 } = require('uuid');
 
 describe('SchemaUUID', function() {
   let Model;
@@ -61,6 +63,8 @@ describe('SchemaUUID', function() {
     const errors = res.errors;
     assert.strictEqual(Object.keys(errors).length, 1);
     assert.ok(errors.x instanceof mongoose.Error.CastError);
+
+    assert.ok(errors.x.reason.message.includes('not a valid UUID string'), errors.x.reason.message);
   });
 
   it('should work with $in and $nin and $all', async function() {
@@ -99,6 +103,106 @@ describe('SchemaUUID', function() {
     assert.strictEqual(foundDocAll[0].y[0], '13d51406-cd06-4fc2-93d1-4fad9b3eecd7');
     assert.strictEqual(foundDocAll[0].y[1], 'f004416b-e02a-4212-ac77-2d3fcf04898b');
     assert.strictEqual(foundDocAll[0].y[2], '5b544b71-8988-422b-a4df-bf691939fe4e');
+  });
+
+  it('should not convert to string nullish UUIDs (gh-13032)', async function() {
+    const schema = new Schema({
+      _id: {
+        type: Schema.Types.UUID,
+        default: uuidv4(),
+        immutable: true
+      },
+      name: {
+        type: String,
+        required: true
+      },
+      organization: {
+        type: Schema.Types.UUID,
+        ref: 'Organization',
+        index: true
+      }
+    }, { _id: false });
+
+    const Test = db.model('gh_13032', schema);
+
+    const { name, organization } = await Test.create({ name: 'test' });
+
+    assert.equal(name, 'test');
+    assert.equal(organization, undefined);
+  });
+
+  it('works with populate (gh-13267)', async function() {
+    const userSchema = new mongoose.Schema({
+      _id: { type: 'UUID', default: () => randomUUID() },
+      name: String,
+      createdBy: {
+        type: 'UUID',
+        ref: 'User'
+      }
+    });
+    const User = db.model('User', userSchema);
+
+    const u1 = await User.create({ name: 'admin' });
+    const { _id } = await User.create({ name: 'created', createdBy: u1._id });
+
+    const pop = await User.findById(_id).populate('createdBy').orFail();
+    assert.equal(pop.createdBy.name, 'admin');
+    assert.equal(pop.createdBy._id.toString(), u1._id.toString());
+
+    await pop.save();
+  });
+
+  it('handles built-in UUID type (gh-13103)', async function() {
+    const schema = new Schema({
+      _id: {
+        type: Schema.Types.UUID
+      }
+    }, { _id: false });
+
+    db.deleteModel(/Test/);
+    const Test = db.model('Test', schema);
+
+    const uuid = new mongoose.Types.UUID();
+    let { _id } = await Test.create({ _id: uuid });
+    assert.ok(_id);
+    assert.equal(typeof _id, 'string');
+    assert.equal(_id, uuid.toString());
+
+    ({ _id } = await Test.findById(uuid));
+    assert.ok(_id);
+    assert.equal(typeof _id, 'string');
+    assert.equal(_id, uuid.toString());
+  });
+
+  it('avoids converting maps of uuids to strings (gh-13657)', async function() {
+    const schema = new mongoose.Schema(
+      {
+        doc_map: {
+          type: mongoose.Schema.Types.Map,
+          of: mongoose.Schema.Types.UUID
+        }
+      }
+    );
+    db.deleteModel(/Test/);
+    const Test = db.model('Test', schema);
+    await Test.deleteMany({});
+
+    const user = new Test({
+      doc_map: new Map([
+        ['role_1', new mongoose.Types.UUID()],
+        ['role_2', new mongoose.Types.UUID()]
+      ])
+    });
+
+    await user.save();
+
+    user.doc_map.set('role_1', new mongoose.Types.UUID());
+    await user.save();
+
+    const exists = await Test.findOne({ 'doc_map.role_1': { $type: 'binData' } });
+    assert.ok(exists);
+
+    assert.equal(typeof user.get('doc_map.role_1'), 'string');
   });
 
   // the following are TODOs based on SchemaUUID.prototype.$conditionalHandlers which are not tested yet

@@ -1,7 +1,7 @@
 # Faster Mongoose Queries With Lean
 
-The [lean option](../api.html#query_Query-lean) tells Mongoose to skip
-[hydrating](../api.html#model_Model-hydrate) the result documents. This
+The [lean option](../api/query.html#query_Query-lean) tells Mongoose to skip
+[hydrating](../api/model.html#model_Model-hydrate) the result documents. This
 makes queries faster and less memory intensive, but the result documents are
 plain old JavaScript objects (POJOs), **not** [Mongoose documents](../documents.html).
 In this tutorial, you'll learn more about the tradeoffs of using `lean()`.
@@ -10,11 +10,12 @@ In this tutorial, you'll learn more about the tradeoffs of using `lean()`.
 * [Lean and Populate](#lean-and-populate)
 * [When to Use Lean](#when-to-use-lean)
 * [Plugins](#plugins)
+* [BigInts](#bigints)
 
-<h2 id="using-lean"><a href="#using-lean">Using Lean</a></h2>
+## Using Lean
 
 By default, Mongoose queries return an instance of the
-[Mongoose `Document` class](../api.html#Document). Documents are much
+[Mongoose `Document` class](../api/document.html#Document). Documents are much
 heavier than vanilla JavaScript objects, because they have a lot of internal
 state for change tracking. Enabling the `lean` option tells Mongoose to skip
 instantiating a full Mongoose document and just give you the POJO.
@@ -25,7 +26,7 @@ const leanDoc = await MyModel.findOne().lean();
 
 How much smaller are lean documents? Here's a comparison.
 
-```javascript
+```acquit
 [require:Lean Tutorial.*compare sizes]
 ```
 
@@ -33,7 +34,7 @@ Under the hood, after executing a query, Mongoose converts the query results
 from POJOs to Mongoose documents. If you turn on the `lean` option, Mongoose
 skips this step.
 
-```javascript
+```acquit
 [require:Lean Tutorial.*compare types]
 ```
 
@@ -48,35 +49,35 @@ The downside of enabling `lean` is that lean docs don't have:
 For example, the following code sample shows that the `Person` model's getters
 and virtuals don't run if you enable `lean`.
 
-```javascript
+```acquit
 [require:Lean Tutorial.*getters and virtuals]
 ```
 
-<h2 id="lean-and-populate"><a href="#lean-and-populate">Lean and Populate</a></h2>
+## Lean and Populate
 
 [Populate](../populate.html) works with `lean()`. If you
 use both `populate()` and `lean()`, the `lean` option propagates to the
 populated documents as well. In the below example, both the top-level
 'Group' documents and the populated 'Person' documents will be lean.
 
-```javascript
+```acquit
 [require:Lean Tutorial.*conventional populate]
 ```
 
 [Virtual populate](../populate.html#populate-virtuals) also works with lean.
 
-```javascript
+```acquit
 [require:Lean Tutorial.*virtual populate]
 ```
 
-<h2 id="when-to-use-lean"><a href="#when-to-use-lean">When to Use Lean</a></h2>
+## When to Use Lean
 
 If you're executing a query and sending the results without modification to,
 say, an [Express response](http://expressjs.com/en/4x/api.html#res), you should
 use lean. In general, if you do not modify the query results and do not use
-[custom getters](../api.html#schematype_SchemaType-get), you should use
+[custom getters](../api/schematype.html#schematype_SchemaType-get), you should use
 `lean()`. If you modify the query results or rely on features like getters
-or [transforms](../api.html#document_Document-toObject), you should not
+or [transforms](../api/document.html#document_Document-toObject), you should not
 use `lean()`.
 
 Below is an example of an [Express route](http://expressjs.com/en/guide/routing.html)
@@ -119,12 +120,12 @@ to add virtuals to your lean query results.
 ## Plugins
 
 Using `lean()` bypasses all Mongoose features, including [virtuals](virtuals.html), [getters/setters](getters-setters.html),
-and [defaults](../api.html#schematype_SchemaType-default). If you want to
+and [defaults](../api/schematype.html#schematype_SchemaType-default). If you want to
 use these features with `lean()`, you need to use the corresponding plugin:
 
-- [mongoose-lean-virtuals](https://plugins.mongoosejs.io/plugins/lean-virtuals)
-- [mongoose-lean-getters](https://plugins.mongoosejs.io/plugins/lean-getters)
-- [mongoose-lean-defaults](https://www.npmjs.com/package/mongoose-lean-defaults)
+* [mongoose-lean-virtuals](https://plugins.mongoosejs.io/plugins/lean-virtuals)
+* [mongoose-lean-getters](https://plugins.mongoosejs.io/plugins/lean-getters)
+* [mongoose-lean-defaults](https://www.npmjs.com/package/mongoose-lean-defaults)
 
 However, you need to keep in mind that Mongoose does not hydrate lean documents,
 so `this` will be a POJO in virtuals, getters, and default functions.
@@ -139,4 +140,13 @@ schema.virtual('lowercase', function() {
   this.name; // Works
   this.get('name'); // Crashes because `this` is not a Mongoose document.
 });
+```
+
+## BigInts
+
+By default, the MongoDB Node driver converts longs stored in MongoDB into JavaScript numbers, **not** [BigInts](https://thecodebarbarian.com/an-overview-of-bigint-in-node-js.html).
+Set the `useBigInt64` option on your `lean()` queries to inflate longs into BigInts.
+
+```acquit
+[require:Lean Tutorial.*bigint]
 ```

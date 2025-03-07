@@ -1,7 +1,7 @@
-import { Schema, model, Types, CallbackError } from 'mongoose';
+import { Schema, model, Types, HydratedDocument } from 'mongoose';
 import { expectError, expectType } from 'tsd';
 
-const schema: Schema = new Schema({ name: { type: 'String' } });
+const schema = new Schema({ name: { type: 'String' } });
 
 interface ITest {
   _id?: Types.ObjectId;
@@ -40,74 +40,18 @@ Test.create([{ name: 'test' }], { validateBeforeSave: true }).then(docs => {
   expectType<string>(docs[0].name);
 });
 
+Test.create({}).then(doc => {
+  expectType<string>(doc.name);
+});
 
-Test.insertMany({ name: 'test' }, {}, (err, docs) => {
-  expectType<CallbackError>(err);
-  expectType<Types.ObjectId>(docs[0]._id);
+Test.create([{}]).then(docs => {
   expectType<string>(docs[0].name);
-  expectType<boolean>(docs[0].isNew);
 });
 
-Test.insertMany({ name: 'test' }, { lean: true }, (err, docs) => {
-  expectType<CallbackError>(err);
-  expectType<Types.ObjectId>(docs[0]._id);
-  expectType<string>(docs[0].name);
-  expectError(docs[0].isNew);
-});
+expectError(Test.create<ITest>({}));
 
-Test.insertMany({ name: 'test' }, (err, docs) => {
-  expectType<CallbackError>(err);
-  expectType<Types.ObjectId>(docs[0]._id);
-  expectType<string>(docs[0].name);
-  expectType<boolean>(docs[0].isNew);
-});
-
-Test.insertMany({ name: 'test' }, {}, (err, docs) => {
-  expectType<CallbackError>(err);
-  expectType<Types.ObjectId>(docs[0]._id);
-  expectType<string>(docs[0].name);
-  expectType<boolean>(docs[0].isNew);
-});
-
-Test.insertMany([{ name: 'test' }], { rawResult: true }, (err, result) => {
-  expectType<CallbackError>(err);
-  expectType<boolean>(result.acknowledged);
-  expectType<number>(result.insertedCount);
-  expectType<{ [key: number]: Types.ObjectId; }>(result.insertedIds);
-});
-
-Test.insertMany([{ name: 'test' }], { rawResult: true }, (err, result) => {
-  expectType<CallbackError>(err);
-  expectType<boolean>(result.acknowledged);
-  expectType<number>(result.insertedCount);
-  expectType<{ [key: number]: Types.ObjectId; }>(result.insertedIds);
-});
-
-Test.insertMany([{ name: 'test' }], { lean: true }, (err, docs) => {
-  expectType<CallbackError>(err);
-  expectType<Types.ObjectId>(docs[0]._id);
-  expectType<string>(docs[0].name);
-  expectError(docs[0].isNew);
-});
-
-Test.insertMany([{ name: 'test' }], (err, docs) => {
-  expectType<CallbackError>(err);
-  expectType<Types.ObjectId>(docs[0]._id);
-  expectType<string>(docs[0].name);
-  expectType<boolean>(docs[0].isNew);
-});
-
-Test.insertMany({ _id: '000000000000000000000000', name: 'test' }, (err, docs) => {
-  expectType<Types.ObjectId>(docs[0]._id);
-  expectType<string>(docs[0].name);
-  expectType<boolean>(docs[0].isNew);
-});
-
-Test.insertMany({ _id: new Types.ObjectId('000000000000000000000000') }, (err, docs) => {
-  expectType<Types.ObjectId>(docs[0]._id);
-  expectType<string>(docs[0].name);
-  expectType<boolean>(docs[0].isNew);
-});
+Test.create<ITest>({ name: 'test' });
+Test.create<ITest>({ _id: new Types.ObjectId('0'.repeat(24)), name: 'test' });
 
 Test.insertMany({ name: 'test' }, {}).then(docs => {
   expectType<Types.ObjectId>(docs[0]._id);
@@ -187,3 +131,10 @@ Test.insertMany({ _id: new Types.ObjectId('000000000000000000000000'), name: 'te
   (await Test.create([{ name: 'test' }]))[0];
   (await Test.create({ name: 'test' }))._id;
 })();
+
+async function createWithAggregateErrors() {
+  expectType<(HydratedDocument<ITest>)[]>(await Test.create([{}]));
+  expectType<(HydratedDocument<ITest> | Error)[]>(await Test.create([{}], { aggregateErrors: true }));
+}
+
+createWithAggregateErrors();

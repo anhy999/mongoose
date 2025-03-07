@@ -1,12 +1,12 @@
-## Schemas
+# Schemas
 
 If you haven't yet done so, please take a minute to read the [quickstart](index.html) to get an idea of how Mongoose works.
-If you are migrating from 5.x to 6.x please take a moment to read the [migration guide](migrating_to_6.html).
+If you are migrating from 7.x to 8.x please take a moment to read the [migration guide](migrating_to_8.html).
 
 <ul class="toc">
   <li><a href="#definition">Defining your schema</a></li>
   <li><a href="#models">Creating a model</a></li>
-  <li><a href="#_id">Ids</a></li>
+  <li><a href="#ids">Ids</a></li>
   <li><a href="#methods">Instance methods</a></li>
   <li><a href="#statics">Statics</a></li>
   <li><a href="#query-helpers">Query Helpers</a></li>
@@ -19,7 +19,7 @@ If you are migrating from 5.x to 6.x please take a moment to read the [migration
   <li><a href="#further-reading">Further Reading</a></li>
 </ul>
 
-<h3 id="definition"><a href="#definition">Defining your schema</a></h3>
+## Defining your schema {#definition}
 
 Everything in Mongoose starts with a Schema. Each schema maps to a MongoDB
 collection and defines the shape of the documents within that collection.
@@ -29,26 +29,26 @@ import mongoose from 'mongoose';
 const { Schema } = mongoose;
 
 const blogSchema = new Schema({
-  title:  String, // String is shorthand for {type: String}
+  title: String, // String is shorthand for {type: String}
   author: String,
-  body:   String,
+  body: String,
   comments: [{ body: String, date: Date }],
   date: { type: Date, default: Date.now },
   hidden: Boolean,
   meta: {
     votes: Number,
-    favs:  Number
+    favs: Number
   }
 });
 ```
 
 If you want to add additional keys later, use the
-[Schema#add](api.html#schema_Schema-add) method.
+[Schema#add](api/schema.html#schema_Schema-add) method.
 
 Each key in our code `blogSchema` defines a property in our documents which
-will be cast to its associated [SchemaType](api.html#schematype_SchemaType).
+will be cast to its associated [SchemaType](api/schematype.html#schematype_SchemaType).
 For example, we've defined a property `title` which will be cast to the
-[String](api.html#schema-string-js) SchemaType and property `date`
+[String](schematypes.html#strings) SchemaType and property `date`
 which will be cast to a `Date` SchemaType.
 
 Notice above that if a property only requires a type, it can be specified using
@@ -77,8 +77,11 @@ The permitted SchemaTypes are:
 * [Mixed](schematypes.html#mixed)
 * [ObjectId](schematypes.html#objectids)
 * [Array](schematypes.html#arrays)
-* [Decimal128](api.html#mongoose_Mongoose-Decimal128)
+* [Decimal128](api/mongoose.html#mongoose_Mongoose-Decimal128)
 * [Map](schematypes.html#maps)
+* [UUID](schematypes.html#uuid)
+* [Double](schematypes.html#double)
+* [Int32](schematypes.html#int32)
 
 Read more about [SchemaTypes here](schematypes.html).
 
@@ -87,7 +90,7 @@ properties, they also define document [instance methods](#methods),
 [static Model methods](#statics), [compound indexes](#indexes),
 and document lifecycle hooks called [middleware](middleware.html).
 
-<h3 id="models"><a href="#models">Creating a model</a></h3>
+## Creating a model {#models}
 
 To use our schema definition, we need to convert our `blogSchema` into a
 [Model](models.html) we can work with.
@@ -98,7 +101,7 @@ const Blog = mongoose.model('Blog', blogSchema);
 // ready to go!
 ```
 
-<h3 id="_id"><a href="#_id">Ids</a></h3>
+## Ids
 
 By default, Mongoose adds an `_id` property to your schemas.
 
@@ -108,9 +111,7 @@ const schema = new Schema();
 schema.path('_id'); // ObjectId { ... }
 ```
 
-When you create a new document with the automatically added
-`_id` property, Mongoose creates a new [`_id` of type ObjectId](https://masteringjs.io/tutorials/mongoose/objectid)
-to your document.
+When you create a new document with the automatically added `_id` property, Mongoose creates a new [`_id` of type ObjectId](https://masteringjs.io/tutorials/mongoose/objectid) to your document.
 
 ```javascript
 const Model = mongoose.model('Test', schema);
@@ -119,13 +120,13 @@ const doc = new Model();
 doc._id instanceof mongoose.Types.ObjectId; // true
 ```
 
-You can also overwrite Mongoose's default `_id` with your
-own `_id`. Just be careful: Mongoose will refuse to save a
-document that doesn't have an `_id`, so you're responsible
-for setting `_id` if you define your own `_id` path.
+You can also overwrite Mongoose's default `_id` with your own `_id`.
+Just be careful: Mongoose will refuse to save a top-level document that doesn't have an `_id`, so you're responsible for setting `_id` if you define your own `_id` path.
 
 ```javascript
-const schema = new Schema({ _id: Number });
+const schema = new Schema({
+  _id: Number // <-- overwrite Mongoose's default `_id`
+});
 const Model = mongoose.model('Test', schema);
 
 const doc = new Model();
@@ -135,7 +136,38 @@ doc._id = 1;
 await doc.save(); // works
 ```
 
-<h3 id="methods"><a href="#methods">Instance methods</a></h3>
+Mongoose also adds an `_id` property to subdocuments.
+You can disable the `_id` property on your subdocuments as follows.
+Mongoose does allow saving subdocuments without an `_id` property.
+
+```javascript
+const nestedSchema = new Schema(
+  { name: String },
+  { _id: false } // <-- disable `_id`
+);
+const schema = new Schema({
+  subdoc: nestedSchema,
+  docArray: [nestedSchema]
+});
+const Test = mongoose.model('Test', schema);
+
+// Neither `subdoc` nor `docArray.0` will have an `_id`
+await Test.create({
+  subdoc: { name: 'test 1' },
+  docArray: [{ name: 'test 2' }]
+});
+```
+
+Alternatively, you can disable `_id` using the following syntax:
+
+```javascript
+const nestedSchema = new Schema({
+  _id: false, // <-- disable _id
+  name: String
+});
+```
+
+## Instance methods {#methods}
 
 Instances of `Models` are [documents](documents.html). Documents have
 many of their own [built-in instance methods](api/document.html).
@@ -144,15 +176,15 @@ We may also define our own custom document instance methods.
 ```javascript
 // define a schema
 const animalSchema = new Schema({ name: String, type: String },
-{
+  {
   // Assign a function to the "methods" object of our animalSchema through schema options.
   // By following this approach, there is no need to create a separate TS type to define the type of the instance functions.
-  methods: {
-    findSimilarTypes(cb) {
-      return mongoose.model('Animal').find({ type: this.type }, cb);
+    methods: {
+      findSimilarTypes(cb) {
+        return mongoose.model('Animal').find({ type: this.type }, cb);
+      }
     }
-  }
-});
+  });
 
 // Or, assign a function to the "methods" object of our animalSchema
 animalSchema.methods.findSimilarTypes = function(cb) {
@@ -172,32 +204,32 @@ dog.findSimilarTypes((err, dogs) => {
 });
 ```
 
-* Overwriting a default mongoose document method may lead to unpredictable results. See [this](api.html#schema_Schema-reserved) for more details.
-* The example above uses the `Schema.methods` object directly to save an instance method. You can also use the `Schema.method()` helper as described [here](api.html#schema_Schema-method).
+* Overwriting a default mongoose document method may lead to unpredictable results. See [this](api/schema.html#schema_Schema-reserved) for more details.
+* The example above uses the `Schema.methods` object directly to save an instance method. You can also use the `Schema.method()` helper as described [here](api/schema.html#schema_Schema-method).
 * Do **not** declare methods using ES6 arrow functions (`=>`). Arrow functions [explicitly prevent binding `this`](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Functions/Arrow_functions#No_binding_of_this), so your method will **not** have access to the document and the above examples will not work.
 
-<h3 id="statics"><a href="#statics">Statics</a></h3>
+## Statics {#statics}
 
 You can also add static functions to your model. There are three equivalent
 ways to add a static:
 
-- Add a function property to the second argument of the schema-constructor (`statics`)
-- Add a function property to `schema.statics`
-- Call the [`Schema#static()` function](api.html#schema_Schema-static)
+* Add a function property to the second argument of the schema-constructor (`statics`)
+* Add a function property to `schema.statics`
+* Call the [`Schema#static()` function](api/schema.html#schema_Schema-static)
 
 ```javascript
 
 // define a schema
 const animalSchema = new Schema({ name: String, type: String },
-{
+  {
   // Assign a function to the "statics" object of our animalSchema through schema options.
-  // By following this approach, there is no need to create a separate TS type to define the type of the statics functions. 
-  statics: {
-    findByName(name) {
-      return this.find({ name: new RegExp(name, 'i') });
+  // By following this approach, there is no need to create a separate TS type to define the type of the statics functions.
+    statics: {
+      findByName(name) {
+        return this.find({ name: new RegExp(name, 'i') });
+      }
     }
-  }
-});
+  });
 
 // Or, Assign a function to the "statics" object of our animalSchema
 animalSchema.statics.findByName = function(name) {
@@ -213,7 +245,7 @@ animals = animals.concat(await Animal.findByBreed('Poodle'));
 
 Do **not** declare statics using ES6 arrow functions (`=>`). Arrow functions [explicitly prevent binding `this`](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Functions/Arrow_functions#No_binding_of_this), so the above examples will not work because of the value of `this`.
 
-<h3 id="query-helpers"><a href="#query-helpers">Query Helpers</a></h3>
+## Query Helpers {#query-helpers}
 
 You can also add query helper functions, which are like instance methods
 but for mongoose queries. Query helper methods let you extend mongoose's
@@ -223,19 +255,19 @@ but for mongoose queries. Query helper methods let you extend mongoose's
 
 // define a schema
 const animalSchema = new Schema({ name: String, type: String },
-{
+  {
   // Assign a function to the "query" object of our animalSchema through schema options.
-  // By following this approach, there is no need to create a separate TS type to define the type of the query functions. 
-  query:{
-    byName(name){
-      return this.where({ name: new RegExp(name, 'i') })
+  // By following this approach, there is no need to create a separate TS type to define the type of the query functions.
+    query: {
+      byName(name) {
+        return this.where({ name: new RegExp(name, 'i') });
+      }
     }
-  }
-});
+  });
 
 // Or, Assign a function to the "query" object of our animalSchema
 animalSchema.query.byName = function(name) {
-  return this.where({ name: new RegExp(name, 'i') })
+  return this.where({ name: new RegExp(name, 'i') });
 };
 
 const Animal = mongoose.model('Animal', animalSchema);
@@ -249,12 +281,12 @@ Animal.findOne().byName('fido').exec((err, animal) => {
 });
 ```
 
-<h3 id="indexes"><a href="#indexes">Indexes</a></h3>
+## Indexes {#indexes}
 
-MongoDB supports [secondary indexes](http://docs.mongodb.org/manual/indexes/).
-With mongoose, we define these indexes within our `Schema` [at](api.html#schematype_SchemaType-index) [the](api.html#schematype_SchemaType-unique) [path](api.html#schematype_SchemaType-sparse) [level](api.html#schemadateoptions_SchemaDateOptions-expires) or the `schema` level.
+MongoDB supports [secondary indexes](http://www.mongodb.com/docs/manual/indexes/).
+With mongoose, we define these indexes within our `Schema` [at](api/schematype.html#schematype_SchemaType-index) [the](api/schematype.html#schematype_SchemaType-unique) [path](api/schematype.html#schematype_SchemaType-sparse) [level](api/schemadateoptions.html#schemadateoptions_SchemaDateOptions-expires) or the `schema` level.
 Defining indexes at the schema level is necessary when creating
-[compound indexes](https://docs.mongodb.com/manual/core/index-compound/).
+[compound indexes](https://www.mongodb.com/docs/manual/core/index-compound/).
 
 ```javascript
 const animalSchema = new Schema({
@@ -266,23 +298,23 @@ const animalSchema = new Schema({
 animalSchema.index({ name: 1, type: -1 }); // schema level
 ```
 
-See [SchemaType#index()](api.html#schematype_SchemaType-index) for other index options.
+See [SchemaType#index()](api/schematype.html#schematype_SchemaType-index) for other index options.
 
-When your application starts up, Mongoose automatically calls [`createIndex`](https://docs.mongodb.com/manual/reference/method/db.collection.createIndex/#db.collection.createIndex) for each defined index in your schema.
+When your application starts up, Mongoose automatically calls [`createIndex`](https://www.mongodb.com/docs/manual/reference/method/db.collection.createIndex/#db.collection.createIndex) for each defined index in your schema.
 Mongoose will call `createIndex` for each index sequentially, and emit an 'index' event on the model when all the `createIndex` calls succeeded or when there was an error.
-While nice for development, it is recommended this behavior be disabled in production since index creation can cause a [significant performance impact](https://docs.mongodb.com/manual/core/index-creation/#index-build-impact-on-database-performance).
+While nice for development, it is recommended this behavior be disabled in production since index creation can cause a [significant performance impact](https://www.mongodb.com/docs/manual/core/index-creation/#index-build-impact-on-database-performance).
 Disable the behavior by setting the `autoIndex` option of your schema to `false`, or globally on the connection by setting the option `autoIndex` to `false`.
 
 ```javascript
-mongoose.connect('mongodb://user:pass@localhost:port/database', { autoIndex: false });
+mongoose.connect('mongodb://user:pass@127.0.0.1:port/database', { autoIndex: false });
 // or
-mongoose.createConnection('mongodb://user:pass@localhost:port/database', { autoIndex: false });
+mongoose.createConnection('mongodb://user:pass@127.0.0.1:port/database', { autoIndex: false });
 // or
 mongoose.set('autoIndex', false);
 // or
 animalSchema.set('autoIndex', false);
 // or
-new Schema({..}, { autoIndex: false });
+new Schema({ /* ... */ }, { autoIndex: false });
 ```
 
 Mongoose will emit an `index` event on the model when indexes are done
@@ -300,11 +332,11 @@ Animal.on('index', error => {
 });
 ```
 
-See also the [Model#ensureIndexes](api.html#model_Model-ensureIndexes) method.
+See also the [Model#ensureIndexes](api/model.html#model_Model-ensureIndexes) method.
 
-<h3 id="virtuals"><a href="#virtuals">Virtuals</a></h3>
+## Virtuals {#virtuals}
 
-[Virtuals](api.html#schema_Schema-virtual) are document properties that
+[Virtuals](api/schema.html#schema_Schema-virtual) are document properties that
 you can get and set but that do not get persisted to MongoDB. The getters
 are useful for formatting or combining fields, while setters are useful for
 de-composing a single value into multiple values for storage.
@@ -337,7 +369,7 @@ But [concatenating](https://masteringjs.io/tutorials/fundamentals/string-concat)
 last name every time can get cumbersome.
 And what if you want to do some extra processing on the name, like
 [removing diacritics](https://www.npmjs.com/package/diacritics)? A
-[virtual property getter](api.html#virtualtype_VirtualType-get) lets you
+[virtual property getter](api/virtualtype.html#virtualtype_VirtualType-get) lets you
 define a `fullName` property that won't get persisted to MongoDB.
 
 ```javascript
@@ -357,7 +389,7 @@ const personSchema = new Schema({
   }
 });
 
-// Or by using the virtual method as following:  
+// Or by using the virtual method as following:
 personSchema.virtual('fullName').get(function() {
   return this.name.first + ' ' + this.name.last;
 });
@@ -370,11 +402,34 @@ Now, mongoose will call your getter function every time you access the
 console.log(axl.fullName); // Axl Rose
 ```
 
-If you use `toJSON()` or `toObject()` mongoose will *not* include virtuals
-by default. This includes the output of calling [`JSON.stringify()`](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/JSON/stringify)
-on a Mongoose document, because [`JSON.stringify()` calls `toJSON()`](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/JSON/stringify#Description).
-Pass `{ virtuals: true }` to either
-[`toObject()`](api.html#document_Document-toObject) or [`toJSON()`](api.html#document_Document-toJSON).
+If you use `toJSON()` or `toObject()` Mongoose will *not* include virtuals by default.
+Pass `{ virtuals: true }` to [`toJSON()`](api/document.html#document_Document-toJSON) or `toObject()` to include virtuals.
+
+```javascript
+// Convert `doc` to a POJO, with virtuals attached
+doc.toObject({ virtuals: true });
+
+// Equivalent:
+doc.toJSON({ virtuals: true });
+```
+
+The above caveat for `toJSON()` also includes the output of calling [`JSON.stringify()`](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/JSON/stringify) on a Mongoose document, because [`JSON.stringify()` calls `toJSON()`](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/JSON/stringify#Description).
+To include virtuals in `JSON.stringify()` output, you can either call `toObject({ virtuals: true })` on the document before calling `JSON.stringify()`, or set the `toJSON: { virtuals: true }` option on your schema.
+
+```javascript
+// Explicitly add virtuals to `JSON.stringify()` output
+JSON.stringify(doc.toObject({ virtuals: true }));
+
+// Or, to automatically attach virtuals to `JSON.stringify()` output:
+const personSchema = new Schema({
+  name: {
+    first: String,
+    last: String
+  }
+}, {
+  toJSON: { virtuals: true } // <-- include virtuals in `JSON.stringify()`
+});
+```
 
 You can also add a custom setter to your virtual that will let you set both
 first name and last name via the `fullName` virtual.
@@ -391,7 +446,7 @@ const personSchema = new Schema({
     fullName: {
       get() {
         return this.name.first + ' ' + this.name.last;
-      }
+      },
       set(v) {
         this.name.first = v.substr(0, v.indexOf(' '));
         this.name.last = v.substr(v.indexOf(' ') + 1);
@@ -422,7 +477,7 @@ Since virtuals are not stored in MongoDB, you can't query with them.
 
 You can [learn more about virtuals here](https://masteringjs.io/tutorials/mongoose/virtuals).
 
-<h3 id="aliases"><a href="#aliases">Aliases</a></h3>
+## Aliases {#aliases}
 
 Aliases are a particular type of virtual where the getter and setter
 seamlessly get and set another property. This is handy for saving network
@@ -453,69 +508,75 @@ schemas and [subdocuments](subdocs.html), but you can also declare
 nested path aliases inline as long as you use the full nested path
 `nested.myProp` as the alias.
 
-```javascript
+```acquit
 [require:gh-6671]
 ```
 
-<h3 id="options"><a href="#options">Options</a></h3>
+## Options {#options}
 
 Schemas have a few configurable options which can be passed to the
 constructor or to the `set` method:
 
 ```javascript
-new Schema({..}, options);
+new Schema({ /* ... */ }, options);
 
 // or
 
-const schema = new Schema({..});
+const schema = new Schema({ /* ... */ });
 schema.set(option, value);
 ```
 
 Valid options:
 
-- [autoIndex](#autoIndex)
-- [autoCreate](#autoCreate)
-- [bufferCommands](#bufferCommands)
-- [bufferTimeoutMS](#bufferTimeoutMS)
-- [capped](#capped)
-- [collection](#collection)
-- [discriminatorKey](#discriminatorKey)
-- [id](#id)
-- [_id](#_id)
-- [minimize](#minimize)
-- [read](#read)
-- [writeConcern](#writeConcern)
-- [shardKey](#shardKey)
-- [statics](#statics)
-- [strict](#strict)
-- [strictQuery](#strictQuery)
-- [toJSON](#toJSON)
-- [toObject](#toObject)
-- [typeKey](#typeKey)
-- [validateBeforeSave](#validateBeforeSave)
-- [versionKey](#versionKey)
-- [optimisticConcurrency](#optimisticConcurrency)
-- [collation](#collation)
-- [timeseries](#timeseries)
-- [selectPopulatedPaths](#selectPopulatedPaths)
-- [skipVersioning](#skipVersioning)
-- [timestamps](#timestamps)
-- [storeSubdocValidationError](#storeSubdocValidationError)
-- [methods](#methods)
-- [query](#query-helpers)
+<!-- markdownlint-disable MD051 -->
+* [autoIndex](#autoIndex)
+* [autoCreate](#autoCreate)
+* [bufferCommands](#bufferCommands)
+* [bufferTimeoutMS](#bufferTimeoutMS)
+* [capped](#capped)
+* [collection](#collection)
+* [discriminatorKey](#discriminatorKey)
+* [excludeIndexes](#excludeIndexes)
+* [id](#id)
+* [_id](#_id)
+* [minimize](#minimize)
+* [read](#read)
+* [writeConcern](#writeConcern)
+* [shardKey](#shardKey)
+* [statics](#statics)
+* [strict](#strict)
+* [strictQuery](#strictQuery)
+* [toJSON](#toJSON)
+* [toObject](#toObject)
+* [typeKey](#typeKey)
+* [validateBeforeSave](#validateBeforeSave)
+* [versionKey](#versionKey)
+* [optimisticConcurrency](#optimisticConcurrency)
+* [collation](#collation)
+* [timeseries](#timeseries)
+* [selectPopulatedPaths](#selectPopulatedPaths)
+* [skipVersioning](#skipVersioning)
+* [timestamps](#timestamps)
+* [storeSubdocValidationError](#storeSubdocValidationError)
+* [collectionOptions](#collectionOptions)
+* [methods](#methods)
+* [query](#query-helpers)
+* [autoSearchIndex](#autoSearchIndex)
+* [readConcern](#readConcern)
+<!-- markdownlint-enable MD051 -->
 
-<h3 id="autoIndex"><a href="#autoIndex">option: autoIndex</a></h3>
+## option: autoIndex {#autoIndex}
 
-By default, Mongoose's [`init()` function](api.html#model_Model-init)
+By default, Mongoose's [`init()` function](api/model.html#model_Model-init)
 creates all the indexes defined in your model's schema by calling
-[`Model.createIndexes()`](api.html#model_Model-createIndexes)
+[`Model.createIndexes()`](api/model.html#model_Model-createIndexes)
 after you successfully connect to MongoDB. Creating indexes automatically is
 great for development and test environments. But index builds can also create
 significant load on your production database. If you want to manage indexes
 carefully in production, you can set `autoIndex` to false.
 
 ```javascript
-const schema = new Schema({..}, { autoIndex: false });
+const schema = new Schema({ /* ... */ }, { autoIndex: false });
 const Clock = mongoose.model('Clock', schema);
 Clock.ensureIndexes(callback);
 ```
@@ -523,7 +584,7 @@ Clock.ensureIndexes(callback);
 The `autoIndex` option is set to `true` by default. You can change this
 default by setting [`mongoose.set('autoIndex', false);`](api/mongoose.html#mongoose_Mongoose-set)
 
-<h3 id="autoCreate"><a href="#autoCreate">option: autoCreate</a></h3>
+## option: autoCreate {#autoCreate}
 
 Before Mongoose builds indexes, it calls `Model.createCollection()` to create the underlying collection in MongoDB by default.
 Calling `createCollection()` sets the [collection's default collation](https://thecodebarbarian.com/a-nodejs-perspective-on-mongodb-34-collations) based on the [collation option](#collation) and establishes the collection as
@@ -548,14 +609,14 @@ const Test = mongoose.model('Test', schema);
 await Test.createCollection();
 ```
 
-<h3 id="bufferCommands"><a href="#bufferCommands">option: bufferCommands</a></h3>
+## option: bufferCommands {#bufferCommands}
 
 By default, mongoose buffers commands when the connection goes down until
 the driver manages to reconnect. To disable buffering, set `bufferCommands`
 to false.
 
 ```javascript
-const schema = new Schema({..}, { bufferCommands: false });
+const schema = new Schema({ /* ... */ }, { bufferCommands: false });
 ```
 
 The schema `bufferCommands` option overrides the global `bufferCommands` option.
@@ -563,51 +624,50 @@ The schema `bufferCommands` option overrides the global `bufferCommands` option.
 ```javascript
 mongoose.set('bufferCommands', true);
 // Schema option below overrides the above, if the schema option is set.
-const schema = new Schema({..}, { bufferCommands: false });
+const schema = new Schema({ /* ... */ }, { bufferCommands: false });
 ```
 
-<h3 id="bufferTimeoutMS"><a href="#bufferTimeoutMS">option: bufferTimeoutMS</a></h3>
+## option: bufferTimeoutMS {#bufferTimeoutMS}
 
 If `bufferCommands` is on, this option sets the maximum amount of time Mongoose buffering will wait before
 throwing an error. If not specified, Mongoose will use 10000 (10 seconds).
 
 ```javascript
 // If an operation is buffered for more than 1 second, throw an error.
-const schema = new Schema({..}, { bufferTimeoutMS: 1000 });
+const schema = new Schema({ /* ... */ }, { bufferTimeoutMS: 1000 });
 ```
 
-<h3 id="capped"><a href="#capped">option: capped</a></h3>
+## option: capped {#capped}
 
-Mongoose supports MongoDBs [capped](http://www.mongodb.org/display/DOCS/Capped+Collections)
+Mongoose supports MongoDBs [capped](https://www.mongodb.com/docs/manual/core/capped-collections/)
 collections. To specify the underlying MongoDB collection be `capped`, set
 the `capped` option to the maximum size of the collection in
-[bytes](http://www.mongodb.org/display/DOCS/Capped+Collections#CappedCollections-size.).
+[bytes](https://www.mongodb.com/docs/manual/core/capped-collections/#create-a-capped-collection).
 
 ```javascript
-new Schema({..}, { capped: 1024 });
+new Schema({ /* ... */ }, { capped: 1024 });
 ```
 
 The `capped` option may also be set to an object if you want to pass
-additional options like [max](http://www.mongodb.org/display/DOCS/Capped+Collections#CappedCollections-max)
-or [autoIndexId](http://www.mongodb.org/display/DOCS/Capped+Collections#CappedCollections-autoIndexId).
+additional options like [max](https://www.mongodb.com/docs/manual/core/capped-collections/#change-the-maximum-number-of-documents-in-a-capped-collection).
 In this case you must explicitly pass the `size` option, which is required.
 
 ```javascript
-new Schema({..}, { capped: { size: 1024, max: 1000, autoIndexId: true } });
+new Schema({ /* ... */ }, { capped: { size: 1024, max: 1000, autoIndexId: true } });
 ```
 
-<h3 id="collection"><a href="#collection">option: collection</a></h3>
+## option: collection {#collection}
 
 Mongoose by default produces a collection name by passing the model name to
-the [utils.toCollectionName](api.html#utils_exports-toCollectionName) method.
+the `utils.toCollectionName` method.
 This method pluralizes the name. Set this option if you need a different name
 for your collection.
 
 ```javascript
-const dataSchema = new Schema({..}, { collection: 'data' });
+const dataSchema = new Schema({ /* ... */ }, { collection: 'data' });
 ```
 
-<h3 id="discriminatorKey"><a href="#discriminatorKey">option: discriminatorKey</a></h3>
+## option: discriminatorKey {#discriminatorKey}
 
 When you define a [discriminator](discriminators.html), Mongoose adds a path to your
 schema that stores which discriminator a document is an instance of. By default, Mongoose
@@ -626,7 +686,31 @@ const doc = new PersonModel({ name: 'James T. Kirk' });
 doc.type; // 'Person'
 ```
 
-<h3 id="id"><a href="#id">option: id</a></h3>
+## option: excludeIndexes {#excludeIndexes}
+
+When `excludeIndexes` is `true`, Mongoose will not create indexes from the given subdocument schema.
+This option only works when the schema is used in a subdocument path or document array path, Mongoose ignores this option if set on the top-level schema for a model.
+Defaults to `false`.
+
+```javascript
+const childSchema1 = Schema({
+  name: { type: String, index: true }
+});
+
+const childSchema2 = Schema({
+  name: { type: String, index: true }
+}, { excludeIndexes: true });
+
+// Mongoose will create an index on `child1.name`, but **not** `child2.name`, because `excludeIndexes`
+// is true on `childSchema2`
+const User = new Schema({
+  name: { type: String, index: true },
+  child1: childSchema1,
+  child2: childSchema2
+});
+```
+
+## option: id {#id}
 
 Mongoose assigns each of your schemas an `id` virtual getter by default
 which returns the document's `_id` field cast to a string, or in the case of
@@ -647,11 +731,11 @@ const p = new Page({ name: 'mongodb.org' });
 console.log(p.id); // undefined
 ```
 
-<h3 id="_id"><a href="#_id">option: _id</a></h3>
+## option: _id {#_id}
 
 Mongoose assigns each of your schemas an `_id` field by default if one
-is not passed into the [Schema](api.html#schema-js) constructor.
-The type assigned is an [ObjectId](api.html#schema_Schema-Types)
+is not passed into the [Schema](api/schema.html#schema_Schema) constructor.
+The type assigned is an [ObjectId](api/schema.html#schema_Schema-Types)
 to coincide with MongoDB's default behavior. If you don't want an `_id`
 added to your schema at all, you may disable it using this option.
 
@@ -677,7 +761,7 @@ Model.create({ children: [{ name: 'Luke' }] }, (error, doc) => {
 });
 ```
 
-<h3 id="minimize"><a href="#minimize">option: minimize</a></h3>
+## option: minimize {#minimize}
 
 Mongoose will, by default, "minimize" schemas by removing empty objects.
 
@@ -686,13 +770,13 @@ const schema = new Schema({ name: String, inventory: {} });
 const Character = mongoose.model('Character', schema);
 
 // will store `inventory` field if it is not empty
-const frodo = new Character({ name: 'Frodo', inventory: { ringOfPower: 1 }});
+const frodo = new Character({ name: 'Frodo', inventory: { ringOfPower: 1 } });
 await frodo.save();
 let doc = await Character.findOne({ name: 'Frodo' }).lean();
 doc.inventory; // { ringOfPower: 1 }
 
 // will not store `inventory` field if it is empty
-const sam = new Character({ name: 'Sam', inventory: {}});
+const sam = new Character({ name: 'Sam', inventory: {} });
 await sam.save();
 doc = await Character.findOne({ name: 'Sam' }).lean();
 doc.inventory; // undefined
@@ -722,45 +806,45 @@ sam.inventory.barrowBlade = 1;
 sam.$isEmpty('inventory'); // false
 ```
 
-<h3 id="read"><a href="#read">option: read</a></h3>
+## option: read {#read}
 
-Allows setting [query#read](api.html#query_Query-read) options at the
+Allows setting [query#read](api/query.html#query_Query-read) options at the
 schema level, providing us a way to apply default
-[ReadPreferences](http://docs.mongodb.org/manual/applications/replication/#replica-set-read-preference)
+[ReadPreferences](http://www.mongodb.com/docs/manual/applications/replication/#replica-set-read-preference)
 to all queries derived from a model.
 
 ```javascript
-const schema = new Schema({..}, { read: 'primary' });            // also aliased as 'p'
-const schema = new Schema({..}, { read: 'primaryPreferred' });   // aliased as 'pp'
-const schema = new Schema({..}, { read: 'secondary' });          // aliased as 's'
-const schema = new Schema({..}, { read: 'secondaryPreferred' }); // aliased as 'sp'
-const schema = new Schema({..}, { read: 'nearest' });            // aliased as 'n'
+const schema = new Schema({ /* ... */ }, { read: 'primary' });            // also aliased as 'p'
+const schema = new Schema({ /* ... */ }, { read: 'primaryPreferred' });   // aliased as 'pp'
+const schema = new Schema({ /* ... */ }, { read: 'secondary' });          // aliased as 's'
+const schema = new Schema({ /* ... */ }, { read: 'secondaryPreferred' }); // aliased as 'sp'
+const schema = new Schema({ /* ... */ }, { read: 'nearest' });            // aliased as 'n'
 ```
 
 The alias of each pref is also permitted so instead of having to type out
 'secondaryPreferred' and getting the spelling wrong, we can simply pass 'sp'.
 
-The read option also allows us to specify _tag sets_. These tell the
+The read option also allows us to specify *tag sets*. These tell the
 [driver](https://github.com/mongodb/node-mongodb-native/) from which members
 of the replica-set it should attempt to read. Read more about tag sets
-[here](http://docs.mongodb.org/manual/applications/replication/#tag-sets) and
+[here](http://www.mongodb.com/docs/manual/applications/replication/#tag-sets) and
 [here](https://www.mongodb.com/docs/manual/core/read-preference).
 
-_NOTE: you may also specify the driver read preference [strategy](https://www.mongodb.com/docs/manual/core/read-preference/#read-preference-modes)
-option when connecting:_
+*NOTE: you may also specify the driver read preference [strategy](https://www.mongodb.com/docs/manual/core/read-preference/#read-preference-modes)
+option when connecting:*
 
 ```javascript
 // pings the replset members periodically to track network latency
-const options = { replset: { strategy: 'ping' }};
+const options = { replset: { strategy: 'ping' } };
 mongoose.connect(uri, options);
 
-const schema = new Schema({..}, { read: ['nearest', { disk: 'ssd' }] });
+const schema = new Schema({ /* ... */ }, { read: ['nearest', { disk: 'ssd' }] });
 mongoose.model('JellyBean', schema);
 ```
 
-<h3 id="writeConcern"><a href="#writeConcern">option: writeConcern</a></h3>
+## option: writeConcern {#writeConcern}
 
-Allows setting [write concern](https://docs.mongodb.com/manual/reference/write-concern/)
+Allows setting [write concern](https://www.mongodb.com/docs/manual/reference/write-concern/)
 at the schema level.
 
 ```javascript
@@ -773,34 +857,34 @@ const schema = new Schema({ name: String }, {
 });
 ```
 
-<h3 id="shardKey"><a href="#shardKey">option: shardKey</a></h3>
+## option: shardKey {#shardKey}
 
-The `shardKey` option is used when we have a [sharded MongoDB architecture](http://www.mongodb.org/display/DOCS/Sharding+Introduction).
+The `shardKey` option is used when we have a [sharded MongoDB architecture](https://www.mongodb.com/docs/manual/sharding/).
 Each sharded collection is given a shard key which must be present in all
 insert/update operations. We just need to set this schema option to the same
 shard key and we’ll be all set.
 
 ```javascript
-new Schema({ .. }, { shardKey: { tag: 1, name: 1 }})
+new Schema({ /* ... */ }, { shardKey: { tag: 1, name: 1 } });
 ```
 
-_Note that Mongoose does not send the `shardcollection` command for you. You
-must configure your shards yourself._
+*Note that Mongoose does not send the `shardcollection` command for you. You
+must configure your shards yourself.*
 
-<h3 id="strict"><a href="#strict">option: strict</a></h3>
+## option: strict {#strict}
 
 The strict option, (enabled by default), ensures that values passed to our
 model constructor that were not specified in our schema do not get saved to
 the db.
 
 ```javascript
-const thingSchema = new Schema({..})
+const thingSchema = new Schema({ /* ... */ })
 const Thing = mongoose.model('Thing', thingSchema);
 const thing = new Thing({ iAmNotInTheSchema: true });
 thing.save(); // iAmNotInTheSchema is not saved to the db
 
 // set to false..
-const thingSchema = new Schema({..}, { strict: false });
+const thingSchema = new Schema({ /* ... */ }, { strict: false });
 const thing = new Thing({ iAmNotInTheSchema: true });
 thing.save(); // iAmNotInTheSchema is now saved to the db!!
 ```
@@ -808,7 +892,7 @@ thing.save(); // iAmNotInTheSchema is now saved to the db!!
 This also affects the use of `doc.set()` to set a property value.
 
 ```javascript
-const thingSchema = new Schema({..})
+const thingSchema = new Schema({ /* ... */ });
 const Thing = mongoose.model('Thing', thingSchema);
 const thing = new Thing;
 thing.set('iAmNotInTheSchema', true);
@@ -827,18 +911,18 @@ const thing = new Thing(doc, false); // disables strict mode
 The `strict` option may also be set to `"throw"` which will cause errors
 to be produced instead of dropping the bad data.
 
-_NOTE: Any key/val set on the instance that does not exist in your schema
-is always ignored, regardless of schema option._
+*NOTE: Any key/val set on the instance that does not exist in your schema
+is always ignored, regardless of schema option.*
 
 ```javascript
-const thingSchema = new Schema({..})
+const thingSchema = new Schema({ /* ... */ });
 const Thing = mongoose.model('Thing', thingSchema);
 const thing = new Thing;
 thing.iAmNotInTheSchema = true;
 thing.save(); // iAmNotInTheSchema is never saved to the db
 ```
 
-<h3 id="strictQuery"><a href="#strictQuery">option: strictQuery</a></h3>
+## option: strictQuery {#strictQuery}
 
 Mongoose supports a separate `strictQuery` option to avoid strict mode for query filters.
 This is because empty query filters cause Mongoose to return all documents in the model, which can cause issues.
@@ -882,24 +966,24 @@ const docs = await MyModel.find(req.query);
 const docs = await MyModel.find({ name: req.query.name, age: req.query.age }).setOptions({ sanitizeFilter: true });
 ```
 
-In Mongoose 6, `strictQuery` is equal to `strict` by default.
+In Mongoose 7, `strictQuery` is `false` by default.
 However, you can override this behavior globally:
 
 ```javascript
-// Set `strictQuery` to `false`, so Mongoose doesn't strip out non-schema
-// query filter properties by default.
-// This does **not** affect `strict`.
-mongoose.set('strictQuery', false);
+// Set `strictQuery` to `true` to omit unknown fields in queries.
+mongoose.set('strictQuery', true);
 ```
 
-<h3 id="toJSON"><a href="#toJSON">option: toJSON</a></h3>
+## option: toJSON {#toJSON}
 
+<!-- markdownlint-disable MD051 -->
 Exactly the same as the [toObject](#toObject) option but only applies when
 the document's [`toJSON` method](https://thecodebarbarian.com/what-is-the-tojson-function-in-javascript.html) is called.
+<!-- markdownlint-enable MD051 -->
 
 ```javascript
 const schema = new Schema({ name: String });
-schema.path('name').get(function (v) {
+schema.path('name').get(function(v) {
   return v + ' is my name';
 });
 schema.set('toJSON', { getters: true, virtuals: false });
@@ -911,11 +995,11 @@ console.log(m.toJSON()); // { _id: 504e0cd7dd992d9be2f20b6f, name: 'Max Headroom
 console.log(JSON.stringify(m)); // { "_id": "504e0cd7dd992d9be2f20b6f", "name": "Max Headroom is my name" }
 ```
 
-To see all available `toJSON/toObject` options, read [this](api.html#document_Document-toObject).
+To see all available `toJSON/toObject` options, read [this](api/document.html#document_Document-toObject).
 
-<h3 id="toObject"><a href="#toObject">option: toObject</a></h3>
+## option: toObject {#toObject}
 
-Documents have a [toObject](api.html#document_Document-toObject) method
+Documents have a [toObject](api/document.html#document_Document-toObject) method
 which converts the mongoose document into a plain JavaScript object. This
 method accepts a few options. Instead of applying these options on a
 per-document basis, we may declare the options at the schema level and have
@@ -935,9 +1019,9 @@ const m = new M({ name: 'Max Headroom' });
 console.log(m); // { _id: 504e0cd7dd992d9be2f20b6f, name: 'Max Headroom is my name' }
 ```
 
-To see all available `toObject` options, read [this](api.html#document_Document-toObject).
+To see all available `toObject` options, read [this](api/document.html#document_Document-toObject).
 
-<h3 id="typeKey"><a href="#typeKey">option: typeKey</a></h3>
+## option: typeKey {#typeKey}
 
 By default, if you have an object with key 'type' in your schema, mongoose
 will interpret it as a type declaration.
@@ -947,7 +1031,7 @@ will interpret it as a type declaration.
 const schema = new Schema({ loc: { type: String, coordinates: [Number] } });
 ```
 
-However, for applications like [geoJSON](http://docs.mongodb.org/manual/reference/geojson/),
+However, for applications like [geoJSON](http://www.mongodb.com/docs/manual/reference/geojson/),
 the 'type' property is important. If you want to control which key mongoose
 uses to find type declarations, set the 'typeKey' schema option.
 
@@ -960,7 +1044,7 @@ const schema = new Schema({
 }, { typeKey: '$type' }); // A '$type' key means this object is a type declaration
 ```
 
-<h3 id="validateBeforeSave"><a href="#validateBeforeSave">option: validateBeforeSave</a></h3>
+## option: validateBeforeSave {#validateBeforeSave}
 
 By default, documents are automatically validated before they are saved to
 the database. This is to prevent saving an invalid document. If you want to
@@ -970,18 +1054,18 @@ validation, you can set `validateBeforeSave` to false.
 ```javascript
 const schema = new Schema({ name: String });
 schema.set('validateBeforeSave', false);
-schema.path('name').validate(function (value) {
-    return value != null;
+schema.path('name').validate(function(value) {
+  return value != null;
 });
 const M = mongoose.model('Person', schema);
 const m = new M({ name: null });
 m.validate(function(err) {
-    console.log(err); // Will tell you that null is not allowed.
+  console.log(err); // Will tell you that null is not allowed.
 });
 m.save(); // Succeeds despite being invalid
 ```
 
-<h3 id="versionKey"><a href="#versionKey">option: versionKey</a></h3>
+## option: versionKey {#versionKey}
 
 The `versionKey` is a property set on each document when first created by
 Mongoose. This keys value contains the internal
@@ -997,7 +1081,7 @@ const thing = new Thing({ name: 'mongoose v3' });
 await thing.save(); // { __v: 0, name: 'mongoose v3' }
 
 // customized versionKey
-new Schema({..}, { versionKey: '_somethingElse' })
+new Schema({ /* ... */ }, { versionKey: '_somethingElse' })
 const Thing = mongoose.model('Thing', schema);
 const thing = new Thing({ name: 'mongoose v3' });
 thing.save(); // { _somethingElse: 0, name: 'mongoose v3' }
@@ -1022,20 +1106,22 @@ doc2.set('comments.1.body', 'new comment');
 await doc2.save();
 ```
 
-If you need optimistic concurrency support for `save()`, you can set the [`optimisticConcurrency` option](#optimisticConcurrency)
+<!-- markdownlint-disable MD051 -->
+If you need optimistic concurrency support for `save()`, you can set the [`optimisticConcurrency` option](#optimisticConcurrency).
+<!-- markdownlint-enable MD051 -->
 
 Document versioning can also be disabled by setting the `versionKey` to
 `false`.
-_DO NOT disable versioning unless you [know what you are doing](http://aaronheckmann.blogspot.com/2012/06/mongoose-v3-part-1-versioning.html)._
+*DO NOT disable versioning unless you [know what you are doing](http://aaronheckmann.blogspot.com/2012/06/mongoose-v3-part-1-versioning.html).*
 
 ```javascript
-new Schema({..}, { versionKey: false });
+new Schema({ /* ... */ }, { versionKey: false });
 const Thing = mongoose.model('Thing', schema);
 const thing = new Thing({ name: 'no versioning please' });
 thing.save(); // { name: 'no versioning please' }
 ```
 
-Mongoose _only_ updates the version key when you use [`save()`](api.html#document_Document-save).
+Mongoose *only* updates the version key when you use [`save()`](api/document.html#document_Document-save).
 If you use `update()`, `findOneAndUpdate()`, etc. Mongoose will **not**
 update the version key. As a workaround, you can use the below middleware.
 
@@ -1059,7 +1145,7 @@ schema.pre('findOneAndUpdate', function() {
 });
 ```
 
-<h3 id="optimisticConcurrency"><a href="#optimisticConcurrency">option: optimisticConcurrency</a></h3>
+## option: optimisticConcurrency {#optimisticConcurrency}
 
 [Optimistic concurrency](https://en.wikipedia.org/wiki/Optimistic_concurrency_control) is a strategy to ensure
 the document you're updating didn't change between when you loaded it using `find()` or `findOne()`, and when
@@ -1075,7 +1161,7 @@ async function markApproved(id) {
   if (house.photos.length < 2) {
     throw new Error('House must have at least two photos!');
   }
-  
+
   house.status = 'APPROVED';
   await house.save();
 }
@@ -1123,9 +1209,9 @@ house.status = 'APPROVED';
 await house.save();
 ```
 
-<h3 id="collation"><a href="#collation">option: collation</a></h3>
+## option: collation {#collation}
 
-Sets a default [collation](https://docs.mongodb.com/manual/reference/collation/)
+Sets a default [collation](https://www.mongodb.com/docs/manual/reference/collation/)
 for every query and aggregation. [Here's a beginner-friendly overview of collations](http://thecodebarbarian.com/a-nodejs-perspective-on-mongodb-34-collations).
 
 ```javascript
@@ -1145,9 +1231,9 @@ MyModel.create([{ name: 'val' }, { name: 'Val' }]).
   });
 ```
 
-<h3 id="timeseries"><a href="#timeseries">option: timeseries</a></h3>
+## option: timeseries {#timeseries}
 
-If you set the `timeseries` option on a schema, Mongoose will create a [timeseries collection](https://docs.mongodb.com/manual/core/timeseries-collections/) for any model that you create from that schema.
+If you set the `timeseries` option on a schema, Mongoose will create a [timeseries collection](https://www.mongodb.com/docs/manual/core/timeseries-collections/) for any model that you create from that schema.
 
 ```javascript
 const schema = Schema({ name: String, timestamp: Date, metadata: Object }, {
@@ -1164,7 +1250,7 @@ const schema = Schema({ name: String, timestamp: Date, metadata: Object }, {
 const Test = db.model('Test', schema);
 ```
 
-<h3 id="skipVersioning"><a href="#skipVersioning">option: skipVersioning</a></h3>
+## option: skipVersioning {#skipVersioning}
 
 `skipVersioning` allows excluding paths from versioning (i.e., the internal
 revision will not be incremented even if these paths are updated). DO NOT
@@ -1172,26 +1258,27 @@ do this unless you know what you're doing. For subdocuments, include this
 on the parent document using the fully qualified path.
 
 ```javascript
-new Schema({..}, { skipVersioning: { dontVersionMe: true } });
+new Schema({ /* ... */ }, { skipVersioning: { dontVersionMe: true } });
 thing.dontVersionMe.push('hey');
 thing.save(); // version is not incremented
 ```
 
-<h3 id="timestamps"><a href="#timestamps">option: timestamps</a></h3>
+## option: timestamps {#timestamps}
 
 The `timestamps` option tells Mongoose to assign `createdAt` and `updatedAt` fields
-to your schema. The type assigned is [Date](api.html#schema-date-js).
+to your schema. The type assigned is [Date](schematypes.html#dates).
 
 By default, the names of the fields are `createdAt` and `updatedAt`. Customize
 the field names by setting `timestamps.createdAt` and `timestamps.updatedAt`.
 
 The way `timestamps` works under the hood is:
+
 * If you create a new document, mongoose simply sets `createdAt`, and `updatedAt` to the time of creation.
 * If you update a document, mongoose will add `updatedAt` to the `$set` object.
-* If you set `upsert: true` on an update operation, mongoose will use [`$setOnInsert`](https://docs.mongodb.com/manual/reference/operator/update/setOnInsert/) operator to add `createdAt` to the document in case the `upsert` operation resulted into a new inserted document.
+* If you set `upsert: true` on an update operation, mongoose will use [`$setOnInsert`](https://www.mongodb.com/docs/manual/reference/operator/update/setOnInsert/) operator to add `createdAt` to the document in case the `upsert` operation resulted into a new inserted document.
 
 ```javascript
-const thingSchema = new Schema({..}, { timestamps: { createdAt: 'created_at' } });
+const thingSchema = new Schema({ /* ... */ }, { timestamps: { createdAt: 'created_at' } });
 const Thing = mongoose.model('Thing', thingSchema);
 const thing = new Thing();
 await thing.save(); // `created_at` & `updatedAt` will be included
@@ -1203,21 +1290,25 @@ await Thing.updateOne({}, { $set: { name: 'Test' } });
 await Thing.findOneAndUpdate({}, { $set: { name: 'Test2' } });
 
 // Mongoose also adds timestamps to bulkWrite() operations
-// See https://mongoosejs.com/docs/api.html#model_Model-bulkWrite
+// See https://mongoosejs.com/docs/api/model.html#model_Model-bulkWrite
 await Thing.bulkWrite([
-  insertOne: {
-    document: {
-      name: 'Jean-Luc Picard',
-      ship: 'USS Stargazer'
+  {
+    insertOne: {
+      document: {
+        name: 'Jean-Luc Picard',
+        ship: 'USS Stargazer'
       // Mongoose will add `created_at` and `updatedAt`
+      }
     }
   },
-  updateOne: {
-    filter: { name: 'Jean-Luc Picard' },
-    update: {
-      $set: {
-        ship: 'USS Enterprise'
+  {
+    updateOne: {
+      filter: { name: 'Jean-Luc Picard' },
+      update: {
+        $set: {
+          ship: 'USS Enterprise'
         // Mongoose will add `updatedAt`
+        }
       }
     }
   }
@@ -1242,7 +1333,7 @@ const schema = Schema({
 });
 ```
 
-<h3 id="pluginTags"><a href="#pluginTags">option: pluginTags</a></h3>
+## option: pluginTags {#pluginTags}
 
 Mongoose supports defining global plugins, plugins that apply to all schemas.
 
@@ -1275,11 +1366,7 @@ mongoose.plugin(function myPlugin(schema) {
 }, { tags: ['useMetaPlugin'] });
 ```
 
-<h3 id="selectPopulatedPaths">
-  <a href="#selectPopulatedPaths">
-    option: selectPopulatedPaths
-  </a>
-</h3>
+## option: selectPopulatedPaths {#selectPopulatedPaths}
 
 By default, Mongoose will automatically `select()` any populated paths for
 you, unless you explicitly exclude them.
@@ -1313,11 +1400,7 @@ const Book = mongoose.model('Book', bookSchema);
 const doc = await Book.findOne().select('title').populate('author');
 ```
 
-<h3 id="storeSubdocValidationError">
-  <a href="#storeSubdocValidationError">
-    option: storeSubdocValidationError
-  </a>
-</h3>
+## option: storeSubdocValidationError {#storeSubdocValidationError}
 
 For legacy reasons, when there is a validation error in subpath of a
 single nested schema, Mongoose will record that there was a validation error
@@ -1348,7 +1431,60 @@ const Parent = mongoose.model('Parent', parentSchema);
 new Parent({ child: {} }).validateSync().errors;
 ```
 
-<h3 id="es6-classes"><a href="#es6-classes">With ES6 Classes</a></h3>
+## option: collectionOptions {#collectionOptions}
+
+Options like [`collation`](#collation) and [`capped`](#capped) affect the options Mongoose passes to MongoDB when creating a new collection.
+Mongoose schemas support most [MongoDB `createCollection()` options](https://www.mongodb.com/docs/manual/reference/method/db.createCollection/), but not all.
+You can use the `collectionOptions` option to set any `createCollection()` options; Mongoose will use `collectionOptions` as the default values when calling `createCollection()` for your schema.
+
+```javascript
+const schema = new Schema({ name: String }, {
+  autoCreate: false,
+  collectionOptions: {
+    capped: true,
+    max: 1000
+  }
+});
+const Test = mongoose.model('Test', schema);
+
+// Equivalent to `createCollection({ capped: true, max: 1000 })`
+await Test.createCollection();
+```
+
+## option: autoSearchIndex {#autoSearchIndex}
+
+<!-- markdownlint-disable MD051 -->
+Similar to [`autoIndex`](#autoIndex), except for automatically creates any [Atlas search indexes](https://www.mongodb.com/docs/atlas/atlas-search/create-index/) defined in your schema.
+Unlike `autoIndex`, this option defaults to false.
+<!-- markdownlint-enable MD051 -->
+
+```javascript
+const schema = new Schema({ name: String }, { autoSearchIndex: true });
+schema.searchIndex({
+  name: 'my-index',
+  definition: { mappings: { dynamic: true } }
+});
+// Will automatically attempt to create the `my-index` search index.
+const Test = mongoose.model('Test', schema);
+```
+
+## option: readConcern {#readConcern}
+
+<!-- markdownlint-disable MD051 -->
+[Read concerns](https://www.mongodb.com/docs/manual/reference/read-concern/) are similar to [`writeConcern`](#writeConcern), but for read operations like `find()` and `findOne()`.
+To set a default `readConcern`, pass the `readConcern` option to the schema constructor as follows.
+<!-- markdownlint-enable MD051 -->
+
+```javascript
+const eventSchema = new mongoose.Schema(
+  { name: String },
+  {
+    readConcern: { level: 'available' } // <-- set default readConcern for all queries
+  }
+);
+```
+
+## With ES6 Classes {#es6-classes}
 
 Schemas have a [`loadClass()` method](api/schema.html#schema_Schema-loadClass)
 that you can use to create a Mongoose schema from an [ES6 class](https://thecodebarbarian.com/an-overview-of-es6-classes):
@@ -1374,28 +1510,28 @@ console.log(schema.statics); // { myStatic: [Function: myStatic] }
 console.log(schema.virtuals); // { myVirtual: VirtualType { ... } }
 ```
 
-<h3 id="plugins"><a href="#plugins">Pluggable</a></h3>
+## Pluggable {#plugins}
 
 Schemas are also [pluggable](plugins.html) which allows us to package up reusable features into
 plugins that can be shared with the community or just between your projects.
 
-<h3 id="further-reading"><a href="#further-reading">Further Reading</a></h3>
+## Further Reading {#further-reading}
 
 Here's an [alternative introduction to Mongoose schemas](https://masteringjs.io/tutorials/mongoose/schema).
 
 To get the most out of MongoDB, you need to learn the basics of MongoDB schema design.
 SQL schema design (third normal form) was designed to [minimize storage costs](https://en.wikipedia.org/wiki/Third_normal_form),
 whereas MongoDB schema design is about making common queries as fast as possible.
-The [_6 Rules of Thumb for MongoDB Schema Design_ blog series](https://www.mongodb.com/blog/post/6-rules-of-thumb-for-mongodb-schema-design-part-1)
+The [*6 Rules of Thumb for MongoDB Schema Design* blog series](https://www.mongodb.com/blog/post/6-rules-of-thumb-for-mongodb-schema-design-part-1)
 is an excellent resource for learning the basic rules for making your queries
 fast.
 
 Users looking to master MongoDB schema design in Node.js should look into
-[_The Little MongoDB Schema Design Book_](http://bit.ly/mongodb-schema-design)
+[*The Little MongoDB Schema Design Book*](http://bit.ly/mongodb-schema-design)
 by Christian Kvalheim, the original author of the [MongoDB Node.js driver](http://npmjs.com/package/mongodb).
 This book shows you how to implement performant schemas for a laundry list
 of use cases, including e-commerce, wikis, and appointment bookings.
 
-<h3 id="next">Next Up</h3>
+## Next Up {#next}
 
 Now that we've covered `Schemas`, let's take a look at [SchemaTypes](schematypes.html).

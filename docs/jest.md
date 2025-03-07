@@ -4,11 +4,17 @@ Jest is a JavaScript runtime developed by Facebook that is usually used for test
 Because Jest is designed primarily for testing React applications, using it to test Node.js server-side applications comes with a lot of caveats.
 We strongly recommend using a different testing framework, like [Mocha](https://mochajs.org/).
 
+To suppress any Jest warnings from Mongoose, set the `SUPPRESS_JEST_WARNINGS` environment variable:
+
+```sh
+env SUPPRESS_JEST_WARNINGS=1 npm test
+```
+
 If you choose to delve into dangerous waters and test Mongoose apps with Jest, here's what you need to know:
 
-<h2 id="recommended-testenvironment"><a href="#recommended-testenvironment">Recommended <code>testEnvironment</code></a></h2>
+## Recommended `testEnvironment` {#recommended-testenvironment}
 
-If you are using Jest `<=26`, do **not** use Jest's default [`jsdom` test environment](https://jestjs.io/docs/en/configuration.html#testenvironment-string) when testing Mongoose apps, _unless_ you are explicitly testing an application that only uses [Mongoose's browser library](browser.html). In Jest `>=27`, ["node" is Jest's default `testEnvironment`](https://jestjs.io/ro/blog/2021/05/25/jest-27#flipping-defaults), so this is no longer an issue.
+If you are using Jest `<=26`, do **not** use Jest's default [`jsdom` test environment](https://jestjs.io/docs/en/configuration.html#testenvironment-string) when testing Mongoose apps, *unless* you are explicitly testing an application that only uses [Mongoose's browser library](browser.html). In Jest `>=27`, ["node" is Jest's default `testEnvironment`](https://jestjs.io/ro/blog/2021/05/25/jest-27#flipping-defaults), so this is no longer an issue.
 
 The `jsdom` test environment attempts to create a browser-like test
 environment in Node.js, and it comes with numerous nasty surprises like a
@@ -26,7 +32,7 @@ module.exports = {
 };
 ```
 
-<h2 id="timer-mocks"><a href="#timer-mocks">Timer Mocks</a></h2>
+## Timer Mocks {#timer-mocks}
 
 Absolutely do **not** use [timer mocks](https://jestjs.io/docs/en/timer-mocks.html) when testing Mongoose apps.
 This is especially important if you're using Jest `>=25`, which stubs out `process.nextTick()`.
@@ -65,7 +71,7 @@ const sinon = require('sinon');
 sinon.stub(time, 'setTimeout');
 ```
 
-<h2 id="globalsetup-and-globalteardown"><a href="#globalsetup-and-globalteardown"><code>globalSetup</code> and <code>globalTeardown</code></a></h2>
+## `globalSetup` and `globalTeardown` {#globalsetup-and-globalteardown}
 
 Do **not** use `globalSetup` to call `mongoose.connect()` or
 `mongoose.createConnection()`. Jest runs `globalSetup` in
@@ -80,5 +86,5 @@ Want to learn how to test Mongoose apps correctly? The
 course on Pluralsight has a great section on testing Mongoose apps with [Mocha](http://npmjs.com/package/mocha).
 
 <a href="https://pluralsight.pxf.io/c/1321469/424552/7490?u=https%3A%2F%2Fapp.pluralsight.com%2Flibrary%2Fcourses%2Fnode-js-express-rest-web-services%2Ftable-of-contents">
-  <img src="https://i.imgur.com/KouuaAZ.png">
+  <img src="https://i.imgur.com/KouuaAZ.png" alt="RESTful Web Services with Node.js and Express">
 </a>
